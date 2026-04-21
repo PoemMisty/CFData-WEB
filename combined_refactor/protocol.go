@@ -10,6 +10,7 @@ type wsRequest struct {
 type startTaskRequest struct {
     IPType  int `json:"ipType"`
     Threads int `json:"threads"`
+    Port    int `json:"port"`
 }
 
 type startTestRequest struct {

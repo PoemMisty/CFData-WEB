@@ -787,6 +787,16 @@
                             onclick="resetDefaultSpeedUrl('speedTestUrl')">↺</button>
                     </div>
                 </div>
+                <div class="option-item full-width">
+                    <span class="label">🧹 精简地址库</span>
+                    <div class="field-with-action">
+                        <input id="compactIPv4Hint" type="text"
+                            value="按 /24 子网探测 TCP:80 连通性，仅保留活跃子网并覆盖 ips-v4.txt"
+                            readonly>
+                        <button id="btnCompactIPv4" class="mini-action-btn" title="开始精简 IPv4 地址库"
+                            onclick="startCompactIPv4()">🧹</button>
+                    </div>
+                </div>
             </div>
 
             <div id="nsbControls" class="hidden">
@@ -943,7 +953,13 @@
         let uploadedFileContent = '';
         let nsbHeaders = [];
         let nsbRows = [];
+        let nsbLiveRows = [];
+        let nsbLiveIndex = {};
         let currentSpeedTestingIP = '';
+
+        const LATENCY_GREEN = 100;
+        const LATENCY_YELLOW = 200;
+        const SPEED_GREEN = 10;
 
         const statusEl = document.getElementById('status');
         const progressBox = document.getElementById('progressBox');
@@ -1063,11 +1079,75 @@
             if (!window.confirm('这会清掉本地缓存文件：ips-v4.txt、ips-v6.txt、locations.json。要继续吗？')) {
                 return;
             }
-            ws.send(JSON.stringify({ type: 'reset_all_config' }));
+            if (!wsSend({ type: 'reset_all_config' })) {
+                alert('与服务端的连接尚未就绪，请稍后再试');
+                return;
+            }
             const menu = document.getElementById('settingsMenu');
             if (menu) menu.classList.add('hidden');
             document.body.classList.add('no-transition');
             setTimeout(() => document.body.classList.remove('no-transition'), 500);
+        }
+
+        function wsSend(payload) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                return false;
+            }
+            try {
+                ws.send(JSON.stringify(payload));
+                return true;
+            } catch (e) {
+                console.error('ws.send failed:', e);
+                return false;
+            }
+        }
+
+        function startCompactIPv4() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                alert('与服务端的连接尚未就绪，请等待"已连接服务器"后再试');
+                return;
+            }
+            if (isTaskRunning) {
+                alert('当前已有任务运行，请先停止或等待完成');
+                return;
+            }
+            if (!window.confirm('精简会覆盖本地 ips-v4.txt，仅保留探测到活跃的 /24 子网。继续？')) {
+                return;
+            }
+            const btn = document.getElementById('btnCompactIPv4');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳';
+            }
+            isTaskRunning = true;
+            setStartLoading('终止精简');
+            resetProgress();
+            progressBox.style.display = 'block';
+            updateProgress(0, 1, '精简准备中');
+            wsSend({ type: 'compact_ipv4', data: {} });
+        }
+
+        function finishCompactIPv4(btnText = '🧹') {
+            const btn = document.getElementById('btnCompactIPv4');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = btnText;
+            }
+        }
+
+        let compactHitBuffer = [];
+        let compactHitFlushTimer = null;
+
+        function flushCompactHits() {
+            if (compactHitFlushTimer) {
+                clearTimeout(compactHitFlushTimer);
+                compactHitFlushTimer = null;
+            }
+            if (compactHitBuffer.length === 0) return;
+            const count = compactHitBuffer.length;
+            const sample = compactHitBuffer.slice(0, 3).join(', ');
+            log(`[精简] 本轮新增命中 ${count} 个，示例: ${sample}${count > 3 ? ' ...' : ''}`);
+            compactHitBuffer = [];
         }
 
         function connect() {
@@ -1078,8 +1158,12 @@
                 initThemeFromStorage();
             };
             ws.onmessage = (event) => {
-                const msg = JSON.parse(event.data);
-                handleMessage(msg);
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleMessage(msg);
+                } catch (e) {
+                    console.error('WebSocket message parse error:', e);
+                }
             };
             ws.onclose = () => {
                 updateStatus('连接断开，3秒后重连...', false);
@@ -1095,7 +1179,13 @@
 
         function log(text) {
             const box = document.getElementById('logBox');
-            box.innerHTML += `<div><span style="color:#94a3b8;opacity:.75;">[${new Date().toLocaleTimeString()}]</span> ${text}</div>`;
+            const div = document.createElement('div');
+            const span = document.createElement('span');
+            span.style.cssText = 'color:#94a3b8;opacity:.75;';
+            span.textContent = `[${new Date().toLocaleTimeString()}]`;
+            div.appendChild(span);
+            div.appendChild(document.createTextNode(' ' + text));
+            box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
 
@@ -1199,19 +1289,47 @@
             tbody.innerHTML = '';
 
             if (mode === 'official') {
-                thead.innerHTML = '<tr><th>IP</th><th>数据中心</th><th>地区</th><th>城市</th><th>延迟</th></tr>';
+                thead.innerHTML = '<tr><th>IP</th><th>端口</th><th>数据中心</th><th>地区</th><th>城市</th><th>延迟</th></tr>';
             } else {
-                let h = nsbHeaders.length ? nsbHeaders : ['IP', '端口', 'TLS', '数据中心', '源IP位置', '地区', '城市', '网络延迟', '下载速度'];
-                const row = h.map(i => `<th>${i}</th>`).join('');
-                thead.innerHTML = `<tr>${row}</tr>`;
+                const headers = NSB_LIVE_HEADERS;
+                const headerRow = headers.map(h => `<th>${h}</th>`).join('');
+                thead.innerHTML = `<tr>${headerRow}</tr>`;
             }
         }
 
         function renderScanRowOfficial(row) {
             const tbody = document.querySelector('#scanTable tbody');
+            const latencyVal = parseFloat(row.LatencyStr);
+            const latencyColor = getLatencyColor(latencyVal);
             // 修改点：为 copyToClipboard 增加 event 参数，以便定位提示文字
-            const html = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${row.IP}', event)">${row.IP}</span></td><td>${row.DataCenter || '-'}</td><td>${row.Region || '-'}</td><td>${row.City || '-'}</td><td>${row.LatencyStr || '-'}</td></tr>`;
+            const html = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${row.IP}', event)">${row.IP}</span></td><td><span class="copy-ip" onclick="copyToClipboard('${row.Port ?? ''}', event)">${row.Port ?? '-'}</span></td><td>${row.DataCenter || '-'}</td><td>${row.Region || '-'}</td><td>${row.City || '-'}</td><td style="color:${latencyColor}; font-weight:600;">${row.LatencyStr || '-'}</td></tr>`;
             tbody.insertAdjacentHTML('beforeend', html);
+        }
+
+        function renderNSBRowFromCSV(headers, r) {
+            let ipIndex = headers.indexOf('IP');
+            let portIndex = headers.indexOf('端口');
+            let latencyIndex = headers.indexOf('网络延迟');
+            let speedIndex = headers.indexOf('下载速度');
+            return headers.map((_, idx) => {
+                const val = escapeHTML(r[idx] ?? '');
+                const rawVal = String(r[idx] ?? '');
+                if (idx === ipIndex && ipIndex !== -1) {
+                    return `<td><span class="copy-ip" onclick="copyToClipboard('${rawVal.replace(/'/g, "\\'")}', event)">${val}</span></td>`;
+                } else if (idx === portIndex && portIndex !== -1) {
+                    return `<td><span class="copy-ip" onclick="copyToClipboard('${rawVal.replace(/'/g, "\\'")}', event)">${val}</span></td>`;
+                } else if (idx === latencyIndex && latencyIndex !== -1) {
+                    const latencyVal = parseFloat(rawVal);
+                    const color = getLatencyColor(latencyVal);
+                    return `<td style="color:${color}; font-weight:600;">${val}</td>`;
+                } else if (idx === speedIndex && speedIndex !== -1) {
+                    const speedVal = parseFloat(rawVal);
+                    const color = speedVal > SPEED_GREEN ? '#10b981' : (speedVal > 0 ? '#f59e0b' : '#ef4444');
+                    return `<td style="color:${color}; font-weight:600;">${val}</td>`;
+                } else {
+                    return `<td>${val}</td>`;
+                }
+            }).join('');
         }
 
         function renderScanRowsCSV(headers, rows) {
@@ -1219,28 +1337,55 @@
             tbody.innerHTML = '';
             renderScanHeaders('nsb');
 
-            // 修改点2：非标模式下IP和端口可点击复制（与官方模式完全一致）
-            // 原因：原非标表格只能看，不能点击复制IP/端口
-            // 方案：识别 'IP' 和 '端口' 列，使用完全相同的 copy-ip 类和 copyToClipboard 函数（动画、提示、log 一致）
-            let ipIndex = headers.indexOf('IP');
-            let portIndex = headers.indexOf('端口');
-
             rows.forEach((r) => {
-                const tds = headers.map((_, idx) => {
-                    const val = escapeHTML(r[idx] ?? '');
-                    const rawVal = String(r[idx] ?? '');
-                    if (idx === ipIndex && ipIndex !== -1) {
-                        return `<td><span class="copy-ip" onclick="copyToClipboard('${rawVal.replace(/'/g, "\\'")}', event)">${val}</span></td>`;
-                    } else if (idx === portIndex && portIndex !== -1) {
-                        return `<td><span class="copy-ip" onclick="copyToClipboard('${rawVal.replace(/'/g, "\\'")}', event)">${val}</span></td>`;
-                    } else {
-                        return `<td>${val}</td>`;
-                    }
-                }).join('');
+                const tds = renderNSBRowFromCSV(headers, r);
                 tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
             });
 
             updateBadge('scanCount', rows.length);
+        }
+
+        const NSB_LIVE_HEADERS = ['IP', '端口', 'TLS', '数据中心', '源IP位置', '地区', '城市', '网络延迟', '下载速度', '出站IP', 'IP类型', '访问协议', 'TLS版本', 'SNI', 'HTTP版本', 'WARP', 'Gateway', 'RBI', '密钥交换', '时间戳'];
+
+        function addNSBLiveResult(row) {
+            const key = (row.ip || '') + ':' + (row.port || '');
+            const existingIdx = nsbLiveIndex[key];
+
+            if (existingIdx !== undefined) {
+                Object.assign(nsbLiveRows[existingIdx], row);
+                const updated = nsbLiveRows[existingIdx];
+                const r = [
+                    updated.ip || '', updated.port || '', updated.tls ?? '-', updated.dc || '-',
+                    updated.loc || '-', updated.region || '-', updated.city || '-',
+                    updated.latency || '-', updated.speed || '-',
+                    updated.outboundIP || '-', updated.ipType || '-', updated.visitScheme || '-',
+                    updated.tlsVersion || '-', updated.sni || '-', updated.httpVersion || '-',
+                    updated.warp || '-', updated.gateway || '-', updated.rbi || '-',
+                    updated.kex || '-', updated.timestamp || '-'
+                ];
+                const tds = renderNSBRowFromCSV(NSB_LIVE_HEADERS, r);
+                const tbody = document.querySelector('#scanTable tbody');
+                const tr = tbody.children[existingIdx];
+                if (tr) tr.innerHTML = tds;
+                return;
+            }
+
+            nsbLiveRows.push(row);
+            nsbLiveIndex[key] = nsbLiveRows.length - 1;
+            updateBadge('scanCount', nsbLiveRows.length);
+
+            const r = [
+                row.ip || '', row.port || '', row.tls ?? '-', row.dc || '-',
+                row.loc || '-', row.region || '-', row.city || '-',
+                row.latency || '-', row.speed || '-',
+                row.outboundIP || '-', row.ipType || '-', row.visitScheme || '-',
+                row.tlsVersion || '-', row.sni || '-', row.httpVersion || '-',
+                row.warp || '-', row.gateway || '-', row.rbi || '-',
+                row.kex || '-', row.timestamp || '-'
+            ];
+            const tds = renderNSBRowFromCSV(NSB_LIVE_HEADERS, r);
+            const tbody = document.querySelector('#scanTable tbody');
+            tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
         }
 
         function addScanResult(row) {
@@ -1268,8 +1413,9 @@
             dcList.forEach((dc) => {
                 const isTested = testedDCs.has(dc.DataCenter);
                 const isTesting = currentTestingDC === dc.DataCenter;
+                const latencyColor = getLatencyColor(dc.MinLatency);
                 const btn = isTesting ? `<button class="action-btn" disabled>测试中...</button>` : (isTested ? `<button class="action-btn selected" onclick="selectDC('${dc.DataCenter}')">重新测试</button>` : `<button class="action-btn" onclick="selectDC('${dc.DataCenter}')">选择测试</button>`);
-                const tr = `<tr><td><strong>${dc.DataCenter}</strong></td><td>${dc.City}</td><td>${dc.IPCount}</td><td>${dc.MinLatency} ms</td><td>${btn}</td></tr>`;
+                const tr = `<tr><td><strong>${dc.DataCenter}</strong></td><td>${dc.City}</td><td>${dc.IPCount}</td><td style="color:${latencyColor}; font-weight:600;">${dc.MinLatency} ms</td><td>${btn}</td></tr>`;
                 tbody.insertAdjacentHTML('beforeend', tr);
             });
             updateBadge('dcCount', dcList.length);
@@ -1290,23 +1436,33 @@
             setStartLoading('终止测试');
             isTaskRunning = true;
             showDCSelection(dcList);
-            ws.send(JSON.stringify({ type: 'start_test', data: { dc, port, delay } }));
+            if (!wsSend({ type: 'start_test', data: { dc, port, delay } })) {
+                isTaskRunning = false;
+                resetButton('✨ 重新开始扫描');
+                alert('连接未就绪，请等待重连后再试');
+                return;
+            }
             switchTab('test');
+        }
+
+        function renderTestRow(res) {
+            const row = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${res.IP}', event)">${res.IP}</span></td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}">未测速</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')">测速</button></td></tr>`;
+            document.querySelector('#testTable tbody').insertAdjacentHTML('beforeend', row);
         }
 
         function addTestResult(res) {
             testResultsCount++;
             updateBadge('testCount', testResultsCount);
             testData.push(res);
-            // 修改点：为 copyToClipboard 增加 event 参数
-            const row = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${res.IP}', event)">${res.IP}</span></td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}">未测速</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')">测速</button></td></tr>`;
-            document.querySelector('#testTable tbody').insertAdjacentHTML('beforeend', row);
+            renderTestRow(res);
         }
 
         function renderAllTestResults() {
             const tbody = document.querySelector('#testTable tbody');
             tbody.innerHTML = '';
-            testData.forEach(addTestResult);
+            testResultsCount = testData.length;
+            updateBadge('testCount', testResultsCount);
+            testData.forEach(renderTestRow);
         }
 
         function onTestComplete() {
@@ -1336,13 +1492,16 @@
             currentSpeedTestingIP = ip;
             const port = parseInt(document.getElementById('testPort').value);
             const customUrl = document.getElementById('speedTestUrl').value.trim() || defaultSpeedTestUrl;
-            ws.send(JSON.stringify({ type: 'start_speed_test', data: { ip, port, url: customUrl } }));
+            if (!wsSend({ type: 'start_speed_test', data: { ip, port, url: customUrl } })) {
+                if (speedVal) speedVal.textContent = '连接未就绪';
+                currentSpeedTestingIP = null;
+            }
         }
 
         function getLatencyColor(val) {
             const v = parseFloat(val);
             if (isNaN(v)) return 'inherit';
-            return v < 100 ? '#10b981' : (v < 200 ? '#f59e0b' : '#ef4444');
+            return v < LATENCY_GREEN ? '#10b981' : (v < LATENCY_YELLOW ? '#f59e0b' : '#ef4444');
         }
 
         function updateSpeedResult(data) {
@@ -1355,7 +1514,7 @@
             }
             if (val) {
                 val.textContent = data.speed;
-                val.style.color = data.speed.includes('MB/s') ? (parseFloat(data.speed) > 10 ? '#10b981' : '#f59e0b') : '#ef4444';
+                val.style.color = data.speed.includes('MB/s') ? (parseFloat(data.speed) > SPEED_GREEN ? '#10b981' : '#f59e0b') : '#ef4444';
             }
             if (btn) {
                 btn.textContent = '重新测速';
@@ -1519,6 +1678,8 @@
 
             nsbHeaders = [];
             nsbRows = [];
+            nsbLiveRows = [];
+            nsbLiveIndex = {};
             updateBadge('scanCount', 0);
 
             ws.send(JSON.stringify({
@@ -1548,9 +1709,9 @@
         function exportScanCSV() {
             if (currentMode === 'official') {
                 if (scanData.length === 0) return alert('暂无可导出结果');
-                let csv = 'IP,数据中心,地区,城市,延迟\n';
+                let csv = 'IP,端口,数据中心,地区,城市,延迟\n';
                 scanData.forEach((r) => {
-                    csv += `${r.IP},${r.DataCenter},${r.Region},${r.City},${r.LatencyStr}\n`;
+                    csv += `${r.IP},${r.Port ?? ''},${r.DataCenter},${r.Region},${r.City},${r.LatencyStr}\n`;
                 });
                 downloadCSV(csv, 'Cloudflare_Scan_Results');
                 return;
@@ -1634,11 +1795,17 @@
                         progressBar.textContent = `${txt} ${p.current || 0}/${p.total || 0} (${percent.toFixed(2)}%)`;
                     }
                     break;
+                case 'nsb_scan_result':
+                    if (currentMode === 'nsb') {
+                        addNSBLiveResult(msg.data || {});
+                    }
+                    break;
                 case 'nsb_csv_complete':
                     isTaskRunning = false;
                     nsbHeaders = msg.data.headers || [];
                     nsbRows = msg.data.rows || [];
-                    renderScanRowsCSV(nsbHeaders, nsbRows);
+                    nsbLiveRows = [];
+                    nsbLiveIndex = {};                    renderScanRowsCSV(nsbHeaders, nsbRows);
                     updateProgress(nsbRows.length, Math.max(nsbRows.length, 1), '完成');
                     progressBar.style.background = 'linear-gradient(to right, #10b981, #34d399)';
                     // 修改点4：修复非标模式完成后进度条绿色闪烁问题
@@ -1652,6 +1819,7 @@
                 case 'task_stopped':
                     isTaskRunning = false;
                     resetButton('✨ 开始扫描与测试');
+                    finishCompactIPv4();
                     progressBar.style.background = 'var(--warning-color)';
                     progressBar.style.width = '100%';
                     progressBar.textContent = '已手动终止';
@@ -1664,6 +1832,7 @@
                     }
                     isTaskRunning = false;
                     resetButton('✨ 开始扫描与测试');
+                    finishCompactIPv4();
                     progressBar.style.background = 'var(--error-color)';
                     progressBar.style.width = '100%';
                     if (msg.data && (msg.data.toLowerCase().includes('cancel') || msg.data.toLowerCase().includes('stop'))) {
@@ -1677,6 +1846,33 @@
 
                 case 'reset_config_result':
                     handleResetConfigResult(msg.data);
+                    break;
+                case 'compact_ipv4_progress':
+                    {
+                        const p = msg.data || {};
+                        const percent = parseFloat(p.percent || 0);
+                        updateProgress(p.current || 0, p.total || 1, `精简第 ${p.pass || 1} 轮`);
+                        progressBar.textContent = `精简第 ${p.pass || 1} 轮 ${p.current || 0}/${p.total || 0} (${percent.toFixed(2)}%) 已保留 ${p.found || 0}`;
+                    }
+                    break;
+                case 'compact_ipv4_hit':
+                    if (msg.data && msg.data.ip) {
+                        compactHitBuffer.push(msg.data.ip);
+                        if (!compactHitFlushTimer) {
+                            compactHitFlushTimer = setTimeout(flushCompactHits, 500);
+                        }
+                    }
+                    break;
+                case 'compact_ipv4_done':
+                    flushCompactHits();
+                    isTaskRunning = false;
+                    finishCompactIPv4('✅');
+                    setTimeout(() => finishCompactIPv4('🧹'), 3000);
+                    resetButton('✨ 开始扫描与测试');
+                    progressBar.style.background = 'linear-gradient(to right, #10b981, #34d399)';
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = `精简完成：保留 ${msg.data.count} 个子网`;
+                    log(`IPv4 地址库精简完成：保留 ${msg.data.count} 个子网，已覆盖 ${msg.data.file}`);
                     break;
                 case 'log':
                     log(msg.data);

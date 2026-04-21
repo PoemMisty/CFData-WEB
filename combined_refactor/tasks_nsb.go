@@ -47,16 +47,24 @@ func scanNSBEntry(ctx context.Context, item string, enableTLS bool, delay int, i
 
     dialer := &net.Dialer{Timeout: timeout, KeepAlive: 0}
     start := time.Now()
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ipAddr, strconv.Itoa(port)))
-	if err != nil {
-		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "TCP连接失败", detail: err.Error()}
-	}
-    defer conn.Close()
+    conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ipAddr, strconv.Itoa(port)))
+    if err != nil {
+        return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "TCP连接失败", detail: err.Error()}
+    }
 
-	tcpDuration := time.Since(start)
-	if delay > 0 && tcpDuration.Milliseconds() > int64(delay) {
-		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "延迟超过阈值", detail: fmt.Sprintf("tcp=%dms, threshold=%dms", tcpDuration.Milliseconds(), delay)}
-	}
+    connClosed := false
+    closeConn := func() {
+        if !connClosed {
+            connClosed = true
+            conn.Close()
+        }
+    }
+    defer closeConn()
+
+    tcpDuration := time.Since(start)
+    if delay > 0 && tcpDuration.Milliseconds() > int64(delay) {
+        return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "延迟超过阈值", detail: fmt.Sprintf("tcp=%dms, threshold=%dms", tcpDuration.Milliseconds(), delay)}
+    }
 
     protocol := "http://"
     if enableTLS {
@@ -64,18 +72,20 @@ func scanNSBEntry(ctx context.Context, item string, enableTLS bool, delay int, i
     }
 
     start = time.Now()
+    httpCtx, httpCancel := context.WithTimeout(ctx, maxDuration)
+    defer httpCancel()
     client := http.Client{
         Transport: &http.Transport{
             Dial: func(network, addr string) (net.Conn, error) {
                 return conn, nil
             },
         },
-        Timeout: timeout,
     }
-	req, err := http.NewRequestWithContext(ctx, "GET", protocol+requestURL, nil)
-	if err != nil {
-		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "构建请求失败", detail: err.Error()}
-	}
+    req, err := http.NewRequestWithContext(httpCtx, "GET", protocol+requestURL, nil)
+    if err != nil {
+        closeConn()
+        return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "构建请求失败", detail: err.Error()}
+    }
     req.Header.Set("User-Agent", "Mozilla/5.0")
     req.Close = true
 
@@ -101,7 +111,7 @@ func scanNSBEntry(ctx context.Context, item string, enableTLS bool, delay int, i
 		}
 	}
 
-	bodyData, err := io.ReadAll(resp.Body)
+	bodyData, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	resp.Body.Close()
 	if err != nil {
 		return nil, &nsbFailureRecord{index: inputIndex, ipAddr: ipAddr, port: portStr, phase: "scan", reason: "读取响应失败", detail: err.Error()}
@@ -199,8 +209,8 @@ func runNSBDownloadSpeed(ctx context.Context, ip string, port int, enableTLS boo
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return 0, "HTTP状态异常: " + formatHTTPFailureDetail(resp.Status, errorBody)
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return 0, "测速失败"
 	}
 
 	written, err := io.Copy(io.Discard, resp.Body)
@@ -216,8 +226,6 @@ func runNSBDownloadSpeed(ctx context.Context, ip string, port int, enableTLS boo
 }
 
 func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent, outFile string, maxThreads, speedTest int, speedURL string, enableTLS bool, delay int) {
-    defer session.endTask()
-
     session.sendWSMessage("log", fmt.Sprintf("开始非标优选：%s", fileName))
 
     tmpFile, err := os.CreateTemp("", "cfdata-nsb-*.txt")
@@ -267,6 +275,7 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 	}
 
 	total := len(ips)
+	reportNSBProgress(session, "scan", 0, total, "延迟扫描")
 	wasCanceled := runBoundedWorkers(ctx, total, maxThreads, 1, func(current, total int) {
 		reportNSBProgress(session, "scan", current, total, "延迟扫描")
 	}, func(idx int) {
@@ -287,10 +296,11 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 			return
 		}
 
-        resMutex.Lock()
-        nsbResults = append(nsbResults, *res)
-        resMutex.Unlock()
-    })
+		resMutex.Lock()
+		nsbResults = append(nsbResults, *res)
+		resMutex.Unlock()
+		session.sendWSMessage("nsb_scan_result", res.toNSBMessage(""))
+	})
 
     if wasCanceled || ctx.Err() != nil {
         session.sendWSMessage("log", "检测到停止命令，非标优选延迟扫描已强制终止")
@@ -303,13 +313,14 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
         return
     }
 
-    if speedTest > 0 {
-        session.sendWSMessage("log", fmt.Sprintf("开始测速：%d 条记录，线程数=%d", len(nsbResults), speedTest))
+	if speedTest > 0 {
+		session.sendWSMessage("log", fmt.Sprintf("开始测速：%d 条记录，线程数=%d", len(nsbResults), speedTest))
 
-        total := len(nsbResults)
-        speedCanceled := runBoundedWorkers(ctx, total, speedTest, 1, func(current, total int) {
-            reportNSBProgress(session, "speed", current, total, "速度测试")
-        }, func(idx int) {
+		total := len(nsbResults)
+		reportNSBProgress(session, "speed", 0, total, "速度测试")
+		speedCanceled := runBoundedWorkers(ctx, total, speedTest, 1, func(current, total int) {
+			reportNSBProgress(session, "speed", current, total, "速度测试")
+		}, func(idx int) {
             select {
             case <-ctx.Done():
                 return
@@ -319,6 +330,16 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 			res := &nsbResults[idx]
 			speed, speedErr := runNSBDownloadSpeed(ctx, res.ipAddr, res.port, enableTLS, speedURL)
 			res.downloadSpeed = speed
+
+			var speedStr string
+			if speedErr != "" {
+				speedStr = speedErr
+			} else {
+				speedStr = fmt.Sprintf("%.2f MB/s", speed/1024)
+			}
+
+			session.sendWSMessage("nsb_scan_result", res.toNSBMessage(speedStr))
+
 			if debugMode && speedErr != "" {
 				failMutex.Lock()
 				failures = append(failures, nsbFailureRecord{
@@ -332,7 +353,7 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 				failMutex.Unlock()
 			}
 		})
-        if speedCanceled {
+		if speedCanceled {
             wasCanceled = true
         }
     }
@@ -345,7 +366,7 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 
     sortNSBResults(nsbResults, speedTest)
 
-    if err := writeNSBCSV(outFile, nsbResults, speedTest, enableTLS); err != nil {
+    if err := writeNSBCSV(outFile, nsbResults, speedTest); err != nil {
         session.sendWSMessage("error", "导出 CSV 失败: "+err.Error())
         return
     }
@@ -360,13 +381,17 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
     session.sendWSMessage("log", fmt.Sprintf("非标优选完成，结果文件: %s", outFile))
 }
 
-func writeNSBCSV(outFile string, results []iptestResult, speedTest int, enableTLS bool) error {
+func writeNSBCSV(outFile string, results []iptestResult, speedTest int) error {
     outFile = safeFilename(outFile)
     file, err := os.Create(outFile)
     if err != nil {
         return err
     }
     defer file.Close()
+    if err := writeUTF8BOM(file); err != nil {
+        os.Remove(outFile)
+        return err
+    }
 
     writer := csv.NewWriter(file)
     defer writer.Flush()
@@ -377,7 +402,7 @@ func writeNSBCSV(outFile string, results []iptestResult, speedTest int, enableTL
     }
 
     for _, res := range results {
-        if err := writer.Write(nsbCSVRow(res, includeSpeed, enableTLS)); err != nil {
+        if err := writer.Write(nsbCSVRow(res, includeSpeed)); err != nil {
             return err
         }
     }
@@ -394,20 +419,20 @@ func nsbCSVHeaders(includeSpeed bool) []string {
     return headers
 }
 
-func nsbCSVRow(res iptestResult, includeSpeed bool, enableTLS bool) []string {
+func nsbCSVRow(res iptestResult, includeSpeed bool) []string {
 	row := []string{
 		res.ipAddr,
         strconv.Itoa(res.port),
-        strconv.FormatBool(enableTLS),
+        strconv.FormatBool(res.visitScheme == "https"),
         res.dataCenter,
         res.locCode,
         res.region,
         res.city,
         res.latency,
     }
-    if includeSpeed {
-        row = append(row, fmt.Sprintf("%.0f kB/s", res.downloadSpeed))
-    }
+	if includeSpeed {
+		row = append(row, fmt.Sprintf("%.2f MB/s", res.downloadSpeed/1024))
+	}
     row = append(row,
         res.outboundIP,
         res.ipType,
@@ -444,6 +469,10 @@ func writeNSBFailureCSV(outFile string, failures []nsbFailureRecord) error {
 		return err
 	}
 	defer file.Close()
+	if err := writeUTF8BOM(file); err != nil {
+		os.Remove(outFile)
+		return err
+	}
 
 	writer := csv.NewWriter(file)
 	defer writer.Flush()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ type DataCenterInfo struct {
 
 type ScanResult struct {
 	IP          string
+	Port        int
 	DataCenter  string
 	Region      string
 	City        string
@@ -85,6 +87,54 @@ type iptestResult struct {
 	downloadSpeed float64
 }
 
+type nsbScanMessage struct {
+	IP          string `json:"ip"`
+	Port        string `json:"port"`
+	TLS         string `json:"tls"`
+	DC          string `json:"dc"`
+	Loc         string `json:"loc"`
+	Region      string `json:"region"`
+	City        string `json:"city"`
+	Latency     string `json:"latency"`
+	Speed       string `json:"speed"`
+	OutboundIP  string `json:"outboundIP"`
+	IPType      string `json:"ipType"`
+	VisitScheme string `json:"visitScheme"`
+	TLSVersion  string `json:"tlsVersion"`
+	SNI         string `json:"sni"`
+	HTTPVersion string `json:"httpVersion"`
+	Warp        string `json:"warp"`
+	Gateway     string `json:"gateway"`
+	RBI         string `json:"rbi"`
+	Kex         string `json:"kex"`
+	Timestamp   string `json:"timestamp"`
+}
+
+func (r *iptestResult) toNSBMessage(speedStr string) nsbScanMessage {
+	return nsbScanMessage{
+		IP:          r.ipAddr,
+		Port:        strconv.Itoa(r.port),
+		TLS:         strconv.FormatBool(r.visitScheme == "https"),
+		DC:          r.dataCenter,
+		Loc:         r.locCode,
+		Region:      r.region,
+		City:        r.city,
+		Latency:     r.latency,
+		Speed:       speedStr,
+		OutboundIP:  r.outboundIP,
+		IPType:      r.ipType,
+		VisitScheme: r.visitScheme,
+		TLSVersion:  r.tlsVersion,
+		SNI:         r.sni,
+		HTTPVersion: r.httpVersion,
+		Warp:        r.warp,
+		Gateway:     r.gateway,
+		RBI:         r.rbi,
+		Kex:         r.kex,
+		Timestamp:   r.timestamp,
+	}
+}
+
 type csvHeaderPayload struct {
 	Headers []string   `json:"headers"`
 	Rows    [][]string `json:"rows"`
@@ -101,6 +151,7 @@ type resetConfigResult struct {
 
 type appSession struct {
 	ws            *websocket.Conn
+	emit          func(msgType string, data interface{})
 	wsMutex       sync.Mutex
 	taskMutex     sync.Mutex
 	isTaskRunning bool
@@ -108,6 +159,12 @@ type appSession struct {
 	wsClosed      bool
 	scanMutex     sync.Mutex
 	scanResults   []ScanResult
+	testMutex     sync.Mutex
+	testResults   []TestResult
+	progressMutex        sync.Mutex
+	progressState        map[string][2]int
+	progressPrintTime    map[string]time.Time
+	progressPrintPercent map[string]float64
 }
 
 type taskStarter func(ctx context.Context, session *appSession)
@@ -117,8 +174,6 @@ var (
 
 	upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-	processTaskMutex sync.Mutex
-	activeTaskCount  int
 	configResetMutex sync.Mutex
 
 	listenPort       int

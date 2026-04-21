@@ -5,7 +5,17 @@ import (
     "encoding/json"
     "fmt"
     "net/http"
+    "runtime/debug"
     "strings"
+    "time"
+
+    "github.com/gorilla/websocket"
+)
+
+const (
+    wsPingInterval  = 30 * time.Second
+    wsWriteDeadline = 10 * time.Second
+    wsReadDeadline  = 90 * time.Second
 )
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -21,25 +31,69 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
         ws.Close()
     }()
 
+    ws.SetReadDeadline(time.Now().Add(wsReadDeadline))
+    ws.SetPongHandler(func(string) error {
+        ws.SetReadDeadline(time.Now().Add(wsReadDeadline))
+        return nil
+    })
+
+    pingStop := make(chan struct{})
+    defer close(pingStop)
+    safeGo("ws-ping", session, func() {
+        ticker := time.NewTicker(wsPingInterval)
+        defer ticker.Stop()
+        for {
+            select {
+            case <-pingStop:
+                return
+            case <-ticker.C:
+                session.wsMutex.Lock()
+                if session.wsClosed {
+                    session.wsMutex.Unlock()
+                    return
+                }
+                err := ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(wsWriteDeadline))
+                session.wsMutex.Unlock()
+                if err != nil {
+                    return
+                }
+            }
+        }
+    })
+
     session.sendWSMessage("init_config", map[string]interface{}{
         "speedTestURL":     speedTestURL,
         "speedTestWorkers": speedTestWorkers,
     })
 
+    safeHandler := func(name string, fn func(json.RawMessage), data json.RawMessage) {
+        defer func() {
+            if r := recover(); r != nil {
+                fmt.Printf("handler %s panic: %v\n%s\n", name, r, debug.Stack())
+                session.sendWSMessage("error", fmt.Sprintf("内部错误（%s），请重试；若持续发生请查看后端日志", name))
+                session.cancelTaskSilently()
+            }
+        }()
+        fn(data)
+    }
+
     handlers := map[string]func(json.RawMessage){
-        "start_task": func(data json.RawMessage) {
-            var params startTaskRequest
-            if err := json.Unmarshal(data, &params); err != nil {
-                session.sendWSMessage("error", "start_task 参数解析失败")
-                return
-            }
-            if params.Threads <= 0 {
-                params.Threads = 100
-            }
-            session.startTask(func(ctx context.Context, session *appSession) {
-                runOfficialTask(ctx, session, params.IPType, params.Threads)
-            })
-        },
+		"start_task": func(data json.RawMessage) {
+			var params startTaskRequest
+			if err := json.Unmarshal(data, &params); err != nil {
+				session.sendWSMessage("error", "start_task 参数解析失败")
+				return
+			}
+			if params.Threads <= 0 {
+				params.Threads = 100
+			}
+			if params.Port <= 0 {
+				params.Port = 443
+			}
+			session.startTask(func(ctx context.Context, session *appSession) {
+				runOfficialTask(ctx, session, params.IPType, params.Threads, params.Port)
+			})
+		},
         "start_test": func(data json.RawMessage) {
             var params startTestRequest
             if err := json.Unmarshal(data, &params); err != nil {
@@ -95,6 +149,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
         "stop_task": func(data json.RawMessage) {
             session.stopTask()
         },
+        "compact_ipv4": func(data json.RawMessage) {
+            session.startTask(func(ctx context.Context, session *appSession) {
+                runCompactIPv4Task(ctx, session)
+            })
+        },
         "reset_all_config": func(data json.RawMessage) {
             resetAllConfigFiles(session)
         },
@@ -117,6 +176,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
             session.sendWSMessage("error", "未知请求类型")
             continue
         }
-        handler(request.Data)
+        safeHandler(request.Type, handler, request.Data)
     }
 }

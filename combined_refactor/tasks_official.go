@@ -15,14 +15,24 @@ import (
     "time"
 )
 
-func scanOfficialIP(ctx context.Context, ip string) *ScanResult {
+var coloRegex = regexp.MustCompile(`colo=([A-Z]+)`)
+
+func scanOfficialIP(ctx context.Context, ip string, port int) *ScanResult {
     dialer := &net.Dialer{Timeout: timeout}
     start := time.Now()
     conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(ip, "80"))
     if err != nil {
         return nil
     }
-    defer conn.Close()
+
+    connClosed := false
+    closeConn := func() {
+        if !connClosed {
+            connClosed = true
+            conn.Close()
+        }
+    }
+    defer closeConn()
 
     tcpDuration := time.Since(start)
     client := http.Client{
@@ -46,7 +56,7 @@ func scanOfficialIP(ctx context.Context, ip string) *ScanResult {
     if err != nil {
         return nil
     }
-    bodyBytes, err := io.ReadAll(resp.Body)
+    bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
     resp.Body.Close()
     if err != nil {
         return nil
@@ -58,7 +68,7 @@ func scanOfficialIP(ctx context.Context, ip string) *ScanResult {
     }
 
     dataCenter := ""
-    if matches := regexp.MustCompile(`colo=([A-Z]+)`).FindStringSubmatch(bodyStr); len(matches) > 1 {
+    if matches := coloRegex.FindStringSubmatch(bodyStr); len(matches) > 1 {
         dataCenter = matches[1]
     }
     if dataCenter == "" {
@@ -66,19 +76,24 @@ func scanOfficialIP(ctx context.Context, ip string) *ScanResult {
     }
 
     loc := locationMap[dataCenter]
-    res := &ScanResult{
-        IP:          ip,
-        DataCenter:  dataCenter,
-        Region:      loc.Region,
-        City:        loc.City,
-        LatencyStr:  fmt.Sprintf("%d ms", tcpDuration.Milliseconds()),
-        TCPDuration: tcpDuration,
-    }
-    return res
+	res := &ScanResult{
+		IP:          ip,
+		Port:        port,
+		DataCenter:  dataCenter,
+		Region:      loc.Region,
+		City:        loc.City,
+		LatencyStr:  fmt.Sprintf("%d ms", tcpDuration.Milliseconds()),
+		TCPDuration: tcpDuration,
+	}
+	return res
 }
 
 func testIPLatency(ctx context.Context, ip string, port int, delay int) *TestResult {
-    dialer := &net.Dialer{Timeout: time.Duration(delay) * time.Millisecond}
+    dialerTimeout := time.Duration(delay) * time.Millisecond
+    if delay <= 0 {
+        dialerTimeout = 3 * time.Second
+    }
+    dialer := &net.Dialer{Timeout: dialerTimeout}
     successCount := 0
     var totalLatency time.Duration
     minLatency := time.Duration(math.MaxInt64)
@@ -127,9 +142,7 @@ func testIPLatency(ctx context.Context, ip string, port int, delay int) *TestRes
     }
 }
 
-func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanMaxThreads int) {
-    defer session.endTask()
-
+func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanMaxThreads int, port int) {
     session.sendWSMessage("log", "开始扫描任务...")
 
     filename := "ips-v4.txt"
@@ -162,10 +175,14 @@ func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanM
 
     session.sendWSMessage("log", fmt.Sprintf("正在扫描 %d 个 IP 地址...", len(ipList)))
 
-    total := len(ipList)
-    wasCanceled := runBoundedWorkers(ctx, total, scanMaxThreads, 10, func(current, total int) {
-        session.sendWSMessage("scan_progress", map[string]interface{}{
-            "current": current,
+	total := len(ipList)
+	session.sendWSMessage("scan_progress", map[string]interface{}{
+		"current": 0,
+		"total":   total,
+	})
+	wasCanceled := runBoundedWorkers(ctx, total, scanMaxThreads, 10, func(current, total int) {
+		session.sendWSMessage("scan_progress", map[string]interface{}{
+			"current": current,
             "total":   total,
         })
     }, func(idx int) {
@@ -176,10 +193,10 @@ func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanM
         default:
         }
 
-        res := scanOfficialIP(ctx, ip)
-        if res == nil {
-            return
-        }
+		res := scanOfficialIP(ctx, ip, port)
+		if res == nil {
+			return
+		}
 
         session.scanMutex.Lock()
         session.scanResults = append(session.scanResults, *res)
@@ -220,7 +237,7 @@ func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanM
         }
         info := dcMap[res.DataCenter]
         info.IPCount++
-        lat, _ := strconv.Atoi(strings.TrimSuffix(res.LatencyStr, " ms"))
+        lat := int(res.TCPDuration / time.Millisecond)
         if lat < info.MinLatency {
             info.MinLatency = lat
         }
@@ -238,8 +255,6 @@ func runOfficialTask(ctx context.Context, session *appSession, ipType int, scanM
 }
 
 func runDetailedTest(ctx context.Context, session *appSession, selectedDC string, port int, delay int) {
-    defer session.endTask()
-
     var testIPList []string
     session.scanMutex.Lock()
     for _, res := range session.scanResults {
@@ -259,10 +274,14 @@ func runDetailedTest(ctx context.Context, session *appSession, selectedDC string
     var results []TestResult
     var resMutex sync.Mutex
 
-    total := len(testIPList)
-    wasCanceled := runBoundedWorkers(ctx, total, 50, 5, func(current, total int) {
-        session.sendWSMessage("test_progress", map[string]int{
-            "current": current,
+	total := len(testIPList)
+	session.sendWSMessage("test_progress", map[string]interface{}{
+		"current": 0,
+		"total":   total,
+	})
+	wasCanceled := runBoundedWorkers(ctx, total, 50, 5, func(current, total int) {
+		session.sendWSMessage("test_progress", map[string]interface{}{
+			"current": current,
             "total":   total,
         })
     }, func(idx int) {
