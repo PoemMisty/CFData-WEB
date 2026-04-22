@@ -45,11 +45,27 @@
             font-weight: bold;
             animation: copyFadeUp 0.8s ease-out forwards;
         }
+
         @keyframes copyFadeUp {
-            0% { opacity: 0; transform: translateY(0); }
-            20% { opacity: 1; transform: translateY(-10px); }
-            80% { opacity: 1; transform: translateY(-15px); }
-            100% { opacity: 0; transform: translateY(-20px); }
+            0% {
+                opacity: 0;
+                transform: translateY(0);
+            }
+
+            20% {
+                opacity: 1;
+                transform: translateY(-10px);
+            }
+
+            80% {
+                opacity: 1;
+                transform: translateY(-15px);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
         }
 
         * {
@@ -790,8 +806,7 @@
                 <div class="option-item full-width">
                     <span class="label">🧹 精简地址库</span>
                     <div class="field-with-action">
-                        <input id="compactIPv4Hint" type="text"
-                            value="按 /24 子网探测 TCP:80 连通性，仅保留活跃子网并覆盖 ips-v4.txt"
+                        <input id="compactIPv4Hint" type="text" value="按 /24 子网探测 TCP:80 连通性，仅保留活跃子网并覆盖 ips-v4.txt"
                             readonly>
                         <button id="btnCompactIPv4" class="mini-action-btn" title="开始精简 IPv4 地址库"
                             onclick="startCompactIPv4()">🧹</button>
@@ -1151,7 +1166,8 @@
         }
 
         function connect() {
-            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(wsProtocol + "//" + window.location.host + "/ws");
             ws.onopen = () => {
                 updateStatus('已连接服务器', true);
                 log('已连接服务器');
@@ -1805,7 +1821,7 @@
                     nsbHeaders = msg.data.headers || [];
                     nsbRows = msg.data.rows || [];
                     nsbLiveRows = [];
-                    nsbLiveIndex = {};                    renderScanRowsCSV(nsbHeaders, nsbRows);
+                    nsbLiveIndex = {}; renderScanRowsCSV(nsbHeaders, nsbRows);
                     updateProgress(nsbRows.length, Math.max(nsbRows.length, 1), '完成');
                     progressBar.style.background = 'linear-gradient(to right, #10b981, #34d399)';
                     // 修改点4：修复非标模式完成后进度条绿色闪烁问题
