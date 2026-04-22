@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+var webUser, webPassword string
 var boolFlagNames = []string{"cli", "tls", "progress", "debug", "nocolor", "compactipv4"}
 
 func rewriteBoolFlagArgs() {
@@ -72,6 +73,8 @@ func main() {
 	flag.StringVar(&speedTestURL, "url", "speed.cloudflare.com/__down?bytes=99999999", "测速下载地址（不含协议前缀）")
 	flag.IntVar(&speedTestWorkers, "speedtest", 5, "默认测速并发")
 	flag.BoolVar(&debugMode, "debug", false, "开启调试输出（导出失败明细 CSV）")
+	flag.StringVar(&webUser, "user", "", "Web 认证用户名（不设置则不启用认证）")
+	flag.StringVar(&webPassword, "password", "", "Web 认证密码（需同时设置 -user）")
 	flag.Parse()
 
 	initLocations()
@@ -82,19 +85,24 @@ func main() {
 		return
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		data, err := staticFiles.ReadFile("index.html")
-        if err != nil {
-            http.Error(w, "无法加载页面", http.StatusInternalServerError)
-            return
-        }
-        w.Header().Set("Content-Type", "text/html; charset=utf-8")
-        _, _ = w.Write(data)
-    })
-    http.HandleFunc("/ws", handleWebSocket)
+		if err != nil {
+			http.Error(w, "无法加载页面", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(data)
+	}))
+	http.HandleFunc("/ws", requireAuth(handleWebSocket))
 
-    addr := fmt.Sprintf(":%d", listenPort)
+	addr := fmt.Sprintf(":%d", listenPort)
 	fmt.Printf("服务启动于 http://localhost:%d\n", listenPort)
+	if webUser != "" && webPassword != "" {
+		fmt.Printf("Web 认证已启用，用户名: %s\n", webUser)
+	} else if webUser != "" || webPassword != "" {
+		fmt.Println("警告： 需要同时设置 -user 和 -password 才会启用认证")
+	}
 	fmt.Printf("当前测速网址: %s\n", speedTestURL)
 	fmt.Printf("调试模式: %v\n", debugMode)
 	server := &http.Server{
@@ -103,5 +111,19 @@ func main() {
 	}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Printf("启动失败: %v\n", err)
+	}
+}
+
+func requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if webUser != "" && webPassword != "" {
+			user, pass, ok := r.BasicAuth()
+			if !ok || user != webUser || pass != webPassword {
+				w.Header().Set("WWW-Authenticate", `Basic realm="CFData"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+		next(w, r)
 	}
 }

@@ -1,11 +1,11 @@
 package main
 
 import (
-    "context"
-    "fmt"
-    "runtime/debug"
-    "sync/atomic"
-    "time"
+	"context"
+	"fmt"
+	"runtime/debug"
+	"sync/atomic"
+	"time"
 )
 
 var globalRunningTasks int32
@@ -37,35 +37,35 @@ func (s *appSession) sendWSMessage(msgType string, data interface{}) {
 	if s.ws == nil {
 		return
 	}
-    s.wsMutex.Lock()
-    defer s.wsMutex.Unlock()
-    if s.wsClosed {
-        return
-    }
-    msg := map[string]interface{}{
-        "type": msgType,
-        "data": data,
-    }
-    s.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-    if err := s.ws.WriteJSON(msg); err != nil {
-        s.wsClosed = true
-        sendLog("WebSocket 发送失败: " + err.Error())
-    }
+	s.wsMutex.Lock()
+	defer s.wsMutex.Unlock()
+	if s.wsClosed {
+		return
+	}
+	msg := map[string]interface{}{
+		"type": msgType,
+		"data": data,
+	}
+	s.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := s.ws.WriteJSON(msg); err != nil {
+		s.wsClosed = true
+		sendLog("WebSocket 发送失败: " + err.Error())
+	}
 }
 
 func (s *appSession) startTask(run taskStarter) {
-    ctx, cancel := context.WithCancel(context.Background())
-    started := s.beginTask(cancel)
-    if !started {
-        cancel()
-        s.sendWSMessage("error", "已有任务正在运行，请等待完成后再试")
-        return
-    }
-    safeGo("task", s, func() {
-        defer cancel()
-        defer s.endTask()
-        run(ctx, s)
-    })
+	ctx, cancel := context.WithCancel(context.Background())
+	started := s.beginTask(cancel)
+	if !started {
+		cancel()
+		s.sendWSMessage("error", "已有任务正在运行，请等待完成后再试")
+		return
+	}
+	safeGo("task", s, func() {
+		defer cancel()
+		defer s.endTask()
+		run(ctx, s)
+	})
 }
 
 func (s *appSession) runTaskSync(run taskStarter) error {
@@ -82,26 +82,29 @@ func (s *appSession) runTaskSync(run taskStarter) error {
 }
 
 func (s *appSession) stopTask() {
-    s.cancelTask(true)
+	s.cancelTask(true)
 }
 
 func (s *appSession) cancelTaskSilently() {
-    s.cancelTask(false)
+	s.cancelTask(false)
 }
 
 func (s *appSession) cancelTask(withLog bool) {
-    s.taskMutex.Lock()
-    cancel := s.taskCancel
-    s.taskMutex.Unlock()
-    if cancel != nil {
-        cancel()
-        if withLog {
-            s.sendWSMessage("log", "已发送强制终止信号，正在清理当前任务...")
-        }
-    }
+	s.taskMutex.Lock()
+	cancel := s.taskCancel
+	s.taskMutex.Unlock()
+	if cancel != nil {
+		cancel()
+		if withLog {
+			s.sendWSMessage("log", "已发送强制终止信号，正在清理当前任务...")
+		}
+	}
 }
 
 func (s *appSession) beginTask(cancel context.CancelFunc) bool {
+	if anyTaskRunning() {
+		return false
+	}
 	s.taskMutex.Lock()
 	defer s.taskMutex.Unlock()
 	if s.isTaskRunning {

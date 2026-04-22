@@ -560,6 +560,8 @@
             padding: 12px;
             border-bottom: 1px solid var(--border-color);
             text-align: left;
+            /* 修改点：解决非标模式列数过多导致表头/内容多行、竖排异常的问题 */
+            white-space: nowrap;
         }
 
         th {
