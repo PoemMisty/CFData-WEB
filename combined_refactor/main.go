@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var webUser, webPassword string
+var webSessionMinutes int
 var boolFlagNames = []string{"cli", "tls", "progress", "debug", "nocolor", "compactipv4"}
 
 func rewriteBoolFlagArgs() {
@@ -75,7 +77,12 @@ func main() {
 	flag.BoolVar(&debugMode, "debug", false, "开启调试输出（导出失败明细 CSV）")
 	flag.StringVar(&webUser, "user", "", "Web 认证用户名（不设置则不启用认证）")
 	flag.StringVar(&webPassword, "password", "", "Web 认证密码（需同时设置 -user）")
+	flag.IntVar(&webSessionMinutes, "session", 720, "Web 登录会话有效期（分钟）")
 	flag.Parse()
+	if webSessionMinutes <= 0 {
+		webSessionMinutes = 720
+	}
+	webSessionTTL = time.Duration(webSessionMinutes) * time.Minute
 
 	initLocations()
 	if cliCfg.enabled {
@@ -84,6 +91,15 @@ func main() {
 		}
 		return
 	}
+
+	http.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handleLoginPost(w, r)
+			return
+		}
+		handleLoginPage(w, r)
+	})
+	http.HandleFunc("/auth/logout", handleLogout)
 
 	http.HandleFunc("/", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		data, err := staticFiles.ReadFile("index.html")
@@ -100,6 +116,7 @@ func main() {
 	fmt.Printf("服务启动于 http://localhost:%d\n", listenPort)
 	if webUser != "" && webPassword != "" {
 		fmt.Printf("Web 认证已启用，用户名: %s\n", webUser)
+		fmt.Printf("Web 会话有效期: %s 分钟\n", strconv.Itoa(webSessionMinutes))
 	} else if webUser != "" || webPassword != "" {
 		fmt.Println("警告： 需要同时设置 -user 和 -password 才会启用认证")
 	}
@@ -111,19 +128,5 @@ func main() {
 	}
 	if err := server.ListenAndServe(); err != nil {
 		fmt.Printf("启动失败: %v\n", err)
-	}
-}
-
-func requireAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if webUser != "" && webPassword != "" {
-			user, pass, ok := r.BasicAuth()
-			if !ok || user != webUser || pass != webPassword {
-				w.Header().Set("WWW-Authenticate", `Basic realm="CFData"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				return
-			}
-		}
-		next(w, r)
 	}
 }

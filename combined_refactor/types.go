@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	//go:embed index.html
+	//go:embed index.html login.html
 	staticFiles embed.FS
 )
 
@@ -57,6 +57,7 @@ type ScanResult struct {
 
 type TestResult struct {
 	IP         string
+	Port       int
 	MinLatency time.Duration
 	MaxLatency time.Duration
 	AvgLatency time.Duration
@@ -150,17 +151,17 @@ type resetConfigResult struct {
 }
 
 type appSession struct {
-	ws            *websocket.Conn
-	emit          func(msgType string, data interface{})
-	wsMutex       sync.Mutex
-	taskMutex     sync.Mutex
-	isTaskRunning bool
-	taskCancel    context.CancelFunc
-	wsClosed      bool
-	scanMutex     sync.Mutex
-	scanResults   []ScanResult
-	testMutex     sync.Mutex
-	testResults   []TestResult
+	ws                   *websocket.Conn
+	emit                 func(msgType string, data interface{})
+	wsMutex              sync.Mutex
+	taskMutex            sync.Mutex
+	isTaskRunning        bool
+	taskCancel           context.CancelFunc
+	wsClosed             bool
+	scanMutex            sync.Mutex
+	scanResults          []ScanResult
+	testMutex            sync.Mutex
+	testResults          []TestResult
 	progressMutex        sync.Mutex
 	progressState        map[string][2]int
 	progressPrintTime    map[string]time.Time

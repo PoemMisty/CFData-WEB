@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CFData 登录</title>
+    <style>
+        :root {
+            --bg1: #eff6ff;
+            --bg2: #e2e8f0;
+            --card: #ffffff;
+            --text: #0f172a;
+            --muted: #64748b;
+            --border: #cbd5e1;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --error-bg: #fef2f2;
+            --error-text: #b91c1c;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
+            background: linear-gradient(145deg, var(--bg1), var(--bg2));
+        }
+
+        .card {
+            width: 100%;
+            max-width: 420px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+            padding: 22px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 22px;
+        }
+
+        .sub {
+            margin: 0 0 18px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .error {
+            display: none;
+            margin-bottom: 12px;
+            background: var(--error-bg);
+            color: var(--error-text);
+            border-radius: 10px;
+            border: 1px solid #fecaca;
+            padding: 10px 12px;
+            font-size: 13px;
+        }
+
+        .field { margin-bottom: 12px; }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        input {
+            width: 100%;
+            height: 42px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            padding: 0 12px;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+
+        button {
+            width: 100%;
+            height: 42px;
+            border: 0;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            background: linear-gradient(135deg, var(--primary), #3b82f6);
+        }
+
+        button:hover { background: linear-gradient(135deg, var(--primary-hover), var(--primary)); }
+    </style>
+</head>
+<body>
+    <form class="card" method="post" action="/auth/login" autocomplete="off">
+        <h1>登录 CFData</h1>
+        <p class="sub">请输入管理员账号和密码</p>
+        <div class="error" id="errorBox">用户名或密码错误，请重试。</div>
+        <div class="field">
+            <label for="username">用户名</label>
+            <input id="username" name="username" type="text" required>
+        </div>
+        <div class="field">
+            <label for="password">密码</label>
+            <input id="password" name="password" type="password" required>
+        </div>
+        <button type="submit">登录</button>
+    </form>
+
+    <script>
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('error') === '1') {
+            const box = document.getElementById('errorBox');
+            box.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

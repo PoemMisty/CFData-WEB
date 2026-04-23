@@ -936,6 +936,7 @@
                         <thead>
                             <tr>
                                 <th>IP 地址</th>
+                                <th>端口</th>
                                 <th>丢包率</th>
                                 <th>最小延迟</th>
                                 <th>最大延迟</th>
@@ -1464,7 +1465,8 @@
         }
 
         function renderTestRow(res) {
-            const row = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${res.IP}', event)">${res.IP}</span></td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}">未测速</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')">测速</button></td></tr>`;
+            const port = res.Port || parseInt(document.getElementById('testPort').value) || 443;
+            const row = `<tr><td><span class="copy-ip" onclick="copyToClipboard('${res.IP}', event)">${res.IP}</span></td><td><span class="copy-ip" onclick="copyToClipboard('${port}', event)">${port}</span></td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}">未测速</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')">测速</button></td></tr>`;
             document.querySelector('#testTable tbody').insertAdjacentHTML('beforeend', row);
         }
 
@@ -1619,7 +1621,10 @@
         function startTask() {
             if (isTaskRunning) {
                 if (confirm('确定要终止当前任务吗？')) {
-                    ws.send(JSON.stringify({ type: 'stop_task' }));
+                    if (!wsSend({ type: 'stop_task', data: {} })) {
+                        alert('连接未就绪，无法发送停止命令');
+                        return;
+                    }
                     setStartLoading('正在停止...');
                 }
                 return;
@@ -1660,7 +1665,12 @@
             updateBadge('testCount', 0);
             updateBadge('dcCount', 0);
 
-            ws.send(JSON.stringify({ type: 'start_task', data: { ipType, threads, port, delay } }));
+            if (!wsSend({ type: 'start_task', data: { ipType, threads, port, delay } })) {
+                isTaskRunning = false;
+                resetButton('✨ 开始扫描与测试');
+                alert('连接未就绪，请等待重连后再试');
+                return;
+            }
             switchTab('scan');
         }
 
@@ -1700,7 +1710,7 @@
             nsbLiveIndex = {};
             updateBadge('scanCount', 0);
 
-            ws.send(JSON.stringify({
+            if (!wsSend({
                 type: 'start_nsb_task',
                 data: {
                     fileName: uploadedFileName,
@@ -1712,7 +1722,11 @@
                     enableTLS,
                     delay,
                 }
-            }));
+            })) {
+                isTaskRunning = false;
+                resetButton('✨ 开始扫描与测试');
+                alert('连接未就绪，请等待重连后再试');
+            }
         }
 
         function escapeHTML(v) {
@@ -1745,9 +1759,10 @@
 
         function exportTestCSV() {
             if (!testData.length) return alert('暂无可导出结果');
-            let csv = 'IP,丢包率,最小延迟,最大延迟,平均延迟,下载速度\n';
+            let csv = 'IP,端口,丢包率,最小延迟,最大延迟,平均延迟,下载速度\n';
+            const defaultPort = parseInt(document.getElementById('testPort').value) || 443;
             testData.forEach((r) => {
-                csv += `${r.IP},${(r.LossRate * 100).toFixed(0)}%,${(r.MinLatency / 1_000_000).toFixed(0)} ms,${(r.MaxLatency / 1_000_000).toFixed(0)} ms,${(r.AvgLatency / 1_000_000).toFixed(0)} ms,${r.Speed || '未测速'}\n`;
+                csv += `${r.IP},${r.Port || defaultPort},${(r.LossRate * 100).toFixed(0)}%,${(r.MinLatency / 1_000_000).toFixed(0)} ms,${(r.MaxLatency / 1_000_000).toFixed(0)} ms,${(r.AvgLatency / 1_000_000).toFixed(0)} ms,${r.Speed || '未测速'}\n`;
             });
             downloadCSV(csv, 'Cloudflare_SpeedTest_Results');
         }
