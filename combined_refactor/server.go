@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -147,12 +151,33 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if strings.TrimSpace(params.OutFile) == "" {
 				params.OutFile = "ip.csv"
 			}
-			if strings.TrimSpace(params.FileContent) == "" {
-				session.sendWSMessage("error", "上传文件为空")
+			hasFileContent := strings.TrimSpace(params.FileContent) != ""
+			hasSourceURL := strings.TrimSpace(params.SourceURL) != ""
+			if hasFileContent == hasSourceURL {
+				session.sendWSMessage("error", "请选择本地文件或网络URL（二选一）")
 				return
 			}
+			if hasSourceURL {
+				parsedURL, err := url.Parse(params.SourceURL)
+				if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+					session.sendWSMessage("error", "网络URL必须是有效的 http/https 地址")
+					return
+				}
+			}
 			session.startTask(func(ctx context.Context, session *appSession) {
-				runNSBTask(ctx, session, params.FileName, params.FileContent, params.OutFile, params.MaxThreads, params.SpeedTest, params.SpeedURL, params.EnableTLS, params.Delay, params.Compact)
+				fileName := params.FileName
+				fileContent := params.FileContent
+				if hasSourceURL {
+					session.sendWSMessage("log", "正在获取非标网络输入: "+params.SourceURL)
+					content, err := getURLContent(params.SourceURL)
+					if err != nil {
+						session.sendWSMessage("error", "获取非标网络输入失败: "+err.Error())
+						return
+					}
+					fileName = params.SourceURL
+					fileContent = content
+				}
+				runNSBTask(ctx, session, fileName, fileContent, params.OutFile, params.MaxThreads, params.SpeedTest, params.SpeedURL, params.EnableTLS, params.Delay, params.Compact)
 			})
 		},
 		"stop_task": func(data json.RawMessage) {
@@ -165,6 +190,20 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		},
 		"reset_all_config": func(data json.RawMessage) {
 			resetAllConfigFiles(session)
+		},
+		"github_upload": func(data json.RawMessage) {
+			var params githubUploadRequest
+			if err := json.Unmarshal(data, &params); err != nil {
+				session.sendWSMessage("error", "github_upload 参数解析失败")
+				return
+			}
+			safeGo("github-upload", session, func() {
+				if err := uploadGitHubContent(r.Context(), params); err != nil {
+					session.sendWSMessage("error", "上传 GitHub 失败: "+err.Error())
+					return
+				}
+				session.sendWSMessage("github_upload_result", map[string]string{"path": params.Path, "rawURL": githubRawURL(params)})
+			})
 		},
 	}
 
@@ -187,4 +226,107 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		safeHandler(request.Type, handler, request.Data)
 	}
+}
+
+func uploadGitHubContent(ctx context.Context, params githubUploadRequest) error {
+	params.Token = strings.TrimSpace(params.Token)
+	params.Owner = strings.TrimSpace(params.Owner)
+	params.Repo = strings.TrimSpace(params.Repo)
+	params.Branch = strings.TrimSpace(params.Branch)
+	params.Path = strings.Trim(strings.TrimSpace(params.Path), "/")
+	params.Message = strings.TrimSpace(params.Message)
+	if params.Token == "" || params.Owner == "" || params.Repo == "" || params.Path == "" || strings.TrimSpace(params.Content) == "" {
+		return fmt.Errorf("token、仓库、路径和内容不能为空")
+	}
+	if params.Branch == "" {
+		params.Branch = "main"
+	}
+	if params.Message == "" {
+		params.Message = "update cfdata results"
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", url.PathEscape(params.Owner), url.PathEscape(params.Repo), escapeGitHubContentPath(params.Path))
+	sha, err := getGitHubContentSHA(ctx, apiURL, params.Token, params.Branch)
+	if err != nil {
+		return err
+	}
+	payload := map[string]string{
+		"message": params.Message,
+		"content": base64.StdEncoding.EncodeToString([]byte(params.Content)),
+		"branch":  params.Branch,
+	}
+	if sha != "" {
+		payload["sha"] = sha
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, apiURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	setGitHubHeaders(req, params.Token)
+	resp, err := upstreamHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("GitHub API 返回 %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	return nil
+}
+
+func githubRawURL(params githubUploadRequest) string {
+	branch := strings.TrimSpace(params.Branch)
+	if branch == "" {
+		branch = "main"
+	}
+	path := strings.Trim(strings.TrimSpace(params.Path), "/")
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/refs/heads/%s/%s", url.PathEscape(strings.TrimSpace(params.Owner)), url.PathEscape(strings.TrimSpace(params.Repo)), url.PathEscape(branch), escapeGitHubContentPath(path))
+}
+
+func getGitHubContentSHA(ctx context.Context, apiURL, token, branch string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"?ref="+url.QueryEscape(branch), nil)
+	if err != nil {
+		return "", err
+	}
+	setGitHubHeaders(req, token)
+	resp, err := upstreamHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("查询 GitHub 文件失败 %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	var payload struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	return payload.SHA, nil
+}
+
+func setGitHubHeaders(req *http.Request, token string) {
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "cfdata")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+}
+
+func escapeGitHubContentPath(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }

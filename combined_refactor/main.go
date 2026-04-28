@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -87,6 +88,9 @@ func main() {
 	initLocations()
 	if cliCfg.enabled {
 		if err := runCLI(cliCfg); err != nil {
+			if errors.Is(err, errCLIConfigCreated) {
+				return
+			}
 			fmt.Printf("CLI 执行失败: %v\n", err)
 		}
 		return

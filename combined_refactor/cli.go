@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +34,87 @@ type cliConfig struct {
 	showProgress bool
 	noColor      bool
 	compactIPv4  bool
+	export       cliExportConfig
+}
+
+type cliExportConfig struct {
+	ConfigFile  string `json:"-"`
+	Format      string `json:"format"`
+	Fields      string `json:"fields"`
+	GitHub      bool   `json:"github"`
+	GitHubSet   bool   `json:"-"`
+	GHRepo      string `json:"ghrepo"`
+	GHBranch    string `json:"ghbranch"`
+	GHPath      string `json:"ghpath"`
+	GHMessage   string `json:"ghmessage"`
+	GHToken     string `json:"ghtoken"`
+	GHTokenFile string `json:"ghtokenfile"`
+	GHUpload    string `json:"ghupload"`
+}
+
+type cliFileConfig struct {
+	CLI         bool    `json:"cli"`
+	Mode        string  `json:"mode"`
+	IPType      int     `json:"iptype"`
+	Threads     int     `json:"threads"`
+	Out         string  `json:"out"`
+	SpeedTest   int     `json:"speedtest"`
+	Progress    bool    `json:"progress"`
+	NoColor     bool    `json:"nocolor"`
+	URL         string  `json:"url"`
+	Debug       bool    `json:"debug"`
+	CompactIPv4 bool    `json:"compactipv4"`
+	TestPort    int     `json:"testport"`
+	Delay       int     `json:"delay"`
+	DC          string  `json:"dc"`
+	SpeedLimit  int     `json:"speedlimit"`
+	SpeedMin    float64 `json:"speedmin"`
+	File        string  `json:"file"`
+	TLS         bool    `json:"tls"`
+	Compact     bool    `json:"compact"`
+	Format      string  `json:"format"`
+	Fields      string  `json:"fields"`
+	GitHub      bool    `json:"github"`
+	GHRepo      string  `json:"ghrepo"`
+	GHBranch    string  `json:"ghbranch"`
+	GHPath      string  `json:"ghpath"`
+	GHMessage   string  `json:"ghmessage"`
+	GHToken     string  `json:"ghtoken"`
+	GHTokenFile string  `json:"ghtokenfile"`
+	GHUpload    string  `json:"ghupload"`
+}
+
+type cliResultRow map[string]string
+
+type cliResultField struct {
+	Key   string
+	Label string
+}
+
+var cliResultFields = []cliResultField{
+	{Key: "ipport", Label: "ip:port"},
+	{Key: "ip", Label: "IP地址"},
+	{Key: "port", Label: "端口号"},
+	{Key: "tls", Label: "TLS"},
+	{Key: "latency", Label: "网络延迟"},
+	{Key: "speed", Label: "下载速度"},
+	{Key: "outboundIP", Label: "出站IP"},
+	{Key: "ipType", Label: "IP类型"},
+	{Key: "dc", Label: "数据中心"},
+	{Key: "loc", Label: "源IP位置"},
+	{Key: "region", Label: "地区"},
+	{Key: "city", Label: "城市"},
+	{Key: "asnNumber", Label: "ASN号码"},
+	{Key: "asnOrg", Label: "ASN组织"},
+	{Key: "visitScheme", Label: "访问协议"},
+	{Key: "tlsVersion", Label: "TLS版本"},
+	{Key: "sni", Label: "SNI"},
+	{Key: "httpVersion", Label: "HTTP版本"},
+	{Key: "warp", Label: "WARP"},
+	{Key: "gateway", Label: "Gateway"},
+	{Key: "rbi", Label: "RBI"},
+	{Key: "kex", Label: "密钥交换"},
+	{Key: "timestamp", Label: "时间戳"},
 }
 
 type cliFlagInfo struct {
@@ -57,12 +141,23 @@ var (
 		{name: "mode", description: "运行模式：official 或 nsb", defaultValue: "official"},
 		{name: "threads", description: "扫描并发数", defaultValue: "100"},
 		{name: "out", description: "输出文件名", defaultValue: "ip.csv"},
-		{name: "speedtest", description: "测速线程数，官方和非标共用", defaultValue: "5"},
+		{name: "speedtest", description: "测速线程数；0 表示不测速", defaultValue: "5"},
 		{name: "progress", description: "是否输出进度日志", defaultValue: "true"},
 		{name: "nocolor", description: "禁用颜色输出（cmd 等不支持 ANSI 的终端可开启避免乱码）", defaultValue: "false"},
 		{name: "url", description: "测速下载地址", defaultValue: "speed.cloudflare.com/__down?bytes=99999999"},
 		{name: "debug", description: "是否开启调试输出", defaultValue: "false"},
 		{name: "compactipv4", description: "精简本地 IPv4 地址库：按 /24 子网测 TCP:80 连通性并覆盖 ips-v4.txt", defaultValue: "false"},
+		{name: "config", description: "CLI 配置文件路径，不存在时在二进制目录自动生成模板", defaultValue: "二进制目录/cfdata-config.json"},
+		{name: "format", description: "CLI 导出格式：csv 或 txt", defaultValue: "csv"},
+		{name: "fields", description: "CLI 导出字段：compact、all、ipport 或逗号分隔自定义字段", defaultValue: "compact"},
+		{name: "github", description: "CLI 导出后上传到 GitHub", defaultValue: "false"},
+		{name: "ghrepo", description: "GitHub 仓库，格式 owner/repo", defaultValue: ""},
+		{name: "ghbranch", description: "GitHub 分支", defaultValue: "main"},
+		{name: "ghpath", description: "GitHub 目标路径；留空时按 -format 自动使用 results/ip.csv 或 results/ip.txt", defaultValue: "<自动>"},
+		{name: "ghmessage", description: "GitHub 提交信息", defaultValue: "update cfdata results"},
+		{name: "ghtoken", description: "GitHub token（不推荐直接写入配置；强烈建议使用仅限制指定仓库读写权限的 token，并确保仓库内无重要数据）", defaultValue: ""},
+		{name: "ghtokenfile", description: "GitHub token 文件路径（强烈建议文件内 token 仅限制指定仓库读写权限，并确保仓库内无重要数据）", defaultValue: ""},
+		{name: "ghupload", description: "快速上传指定文件到 GitHub，不执行测试；需配合 -github", defaultValue: ""},
 	}
 	cliOfficialFlags = []cliFlagInfo{
 		{name: "iptype", description: "官方模式 IP 类型：4 或 6", defaultValue: "4"},
@@ -78,6 +173,8 @@ var (
 		{name: "compact", description: "非标模式导出精简表格列", defaultValue: "true"},
 	}
 )
+
+var errCLIConfigCreated = errors.New("CLI 配置文件已生成")
 
 func registerCLIFlags() *cliConfig {
 	cfg := &cliConfig{}
@@ -98,11 +195,25 @@ func registerCLIFlags() *cliConfig {
 	flag.BoolVar(&cfg.showProgress, "progress", true, "CLI 模式输出进度日志")
 	flag.BoolVar(&cfg.noColor, "nocolor", false, "禁用 ANSI 颜色输出（cmd 等不支持的终端建议开启）")
 	flag.BoolVar(&cfg.compactIPv4, "compactipv4", false, "精简本地 IPv4 地址库，按 /24 子网探测 TCP:80 连通性后覆盖 ips-v4.txt")
+	flag.StringVar(&cfg.export.ConfigFile, "config", "", "CLI 导出/GitHub 配置文件路径")
+	flag.StringVar(&cfg.export.Format, "format", "", "CLI 导出格式：csv 或 txt")
+	flag.StringVar(&cfg.export.Fields, "fields", "", "CLI 导出字段：compact、all、ipport 或逗号分隔自定义字段")
+	flag.BoolVar(&cfg.export.GitHub, "github", false, "CLI 导出后上传到 GitHub")
+	flag.StringVar(&cfg.export.GHRepo, "ghrepo", "", "GitHub 仓库 owner/repo")
+	flag.StringVar(&cfg.export.GHBranch, "ghbranch", "", "GitHub 分支")
+	flag.StringVar(&cfg.export.GHPath, "ghpath", "", "GitHub 目标路径")
+	flag.StringVar(&cfg.export.GHMessage, "ghmessage", "", "GitHub 提交信息")
+	flag.StringVar(&cfg.export.GHToken, "ghtoken", "", "GitHub token")
+	flag.StringVar(&cfg.export.GHTokenFile, "ghtokenfile", "", "GitHub token 文件")
+	flag.StringVar(&cfg.export.GHUpload, "ghupload", "", "快速上传指定文件到 GitHub，不执行测试")
 	return cfg
 }
 
 func runCLI(cfg *cliConfig) error {
 	cfg.speedTest = speedTestWorkers
+	if err := resolveCLIExportConfig(cfg); err != nil {
+		return err
+	}
 	if cfg.noColor {
 		disableANSIColors()
 	}
@@ -110,6 +221,9 @@ func runCLI(cfg *cliConfig) error {
 
 	if cfg.compactIPv4 {
 		return runCompactIPv4CLI(cfg)
+	}
+	if strings.TrimSpace(cfg.export.GHUpload) != "" {
+		return runCLIQuickGitHubUpload(cfg)
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(cfg.mode))
@@ -123,6 +237,21 @@ func runCLI(cfg *cliConfig) error {
 	}
 }
 
+func runCLIQuickGitHubUpload(cfg *cliConfig) error {
+	if !cfg.export.GitHub {
+		return fmt.Errorf("使用 -ghupload 快速上传时需要同时启用 -github")
+	}
+	path := expandHome(cfg.export.GHUpload)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.export.GHPath) == "" || cfg.export.GHPath == "results/ip."+cfg.export.Format {
+		cfg.export.GHPath = "results/" + filepath.Base(path)
+	}
+	return uploadCLIExportToGitHub(cfg, string(content))
+}
+
 func runCompactIPv4CLI(cfg *cliConfig) error {
 	session := newCLISession(cfg)
 	if err := session.runTaskSync(func(ctx context.Context, session *appSession) {
@@ -131,6 +260,323 @@ func runCompactIPv4CLI(cfg *cliConfig) error {
 		return cliTaskError(err)
 	}
 	return nil
+}
+
+func resolveCLIExportConfig(cfg *cliConfig) error {
+	provided := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { provided[f.Name] = true })
+	configPath := cfg.export.ConfigFile
+	if configPath == "" {
+		configPath = os.Getenv("CFDATA_CONFIG")
+	}
+	if configPath == "" {
+		configPath = defaultCLIConfigPath()
+	}
+	fileCfg, created, err := loadOrCreateCLIConfig(configPath)
+	if err != nil {
+		return err
+	}
+	if created {
+		fmt.Printf("[config] 已生成配置文件: %s\n", configPath)
+		fmt.Println("[config] 优先级: 命令行参数 > 配置文件 > 环境变量 > 默认值")
+		fmt.Println("[config] 请退出后按需编辑配置文件，再重新开始测试。")
+		return errCLIConfigCreated
+	}
+	envCfg := cliExportConfig{
+		Format:      os.Getenv("CFDATA_FORMAT"),
+		Fields:      os.Getenv("CFDATA_FIELDS"),
+		GHRepo:      os.Getenv("CFDATA_GHREPO"),
+		GHBranch:    os.Getenv("CFDATA_GHBRANCH"),
+		GHPath:      os.Getenv("CFDATA_GHPATH"),
+		GHMessage:   os.Getenv("CFDATA_GHMESSAGE"),
+		GHToken:     firstNonEmpty(os.Getenv("CFDATA_GHTOKEN"), os.Getenv("GITHUB_TOKEN")),
+		GHTokenFile: os.Getenv("CFDATA_GHTOKENFILE"),
+		GHUpload:    os.Getenv("CFDATA_GHUPLOAD"),
+	}
+	if value := strings.TrimSpace(os.Getenv("CFDATA_GITHUB")); value != "" {
+		envCfg.GitHub = parseBoolEnv(value)
+		envCfg.GitHubSet = true
+	}
+	merged := defaultCLIExportConfig()
+	mergeCLIExportConfig(&merged, envCfg, false)
+	applyCLIFileConfig(cfg, fileCfg, provided)
+	mergeCLIExportConfig(&merged, fileCfg.Export(), false)
+	mergeCLIExportConfig(&merged, cfg.export, true, provided)
+	merged.ConfigFile = configPath
+	merged.Format = strings.ToLower(strings.TrimSpace(merged.Format))
+	if merged.Format == "" {
+		merged.Format = "csv"
+	}
+	if merged.Format != "csv" && merged.Format != "txt" {
+		return fmt.Errorf("不支持的 -format: %s", merged.Format)
+	}
+	if strings.TrimSpace(merged.Fields) == "" {
+		merged.Fields = "compact"
+	}
+	if strings.TrimSpace(merged.GHBranch) == "" {
+		merged.GHBranch = "main"
+	}
+	if strings.TrimSpace(merged.GHMessage) == "" {
+		merged.GHMessage = "update cfdata results"
+	}
+	if strings.TrimSpace(merged.GHPath) == "" || (!provided["ghpath"] && fileCfg.GHPath == "" && envCfg.GHPath == "") {
+		merged.GHPath = "results/ip." + merged.Format
+	}
+	if merged.GHToken == "" && strings.TrimSpace(merged.GHTokenFile) != "" {
+		data, err := os.ReadFile(expandHome(merged.GHTokenFile))
+		if err != nil {
+			return fmt.Errorf("读取 token 文件失败: %w", err)
+		}
+		merged.GHToken = strings.TrimSpace(string(data))
+	}
+	cfg.export = merged
+	return nil
+}
+
+func defaultCLIExportConfig() cliExportConfig {
+	return cliExportConfig{Format: "csv", Fields: "compact", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results"}
+}
+
+func defaultCLIFileConfig() cliFileConfig {
+	return cliFileConfig{CLI: true, Mode: "official", IPType: 4, Threads: 100, Out: "ip.csv", SpeedTest: 5, Progress: true, NoColor: false, URL: "speed.cloudflare.com/__down?bytes=99999999", Debug: false, CompactIPv4: false, TestPort: 443, Delay: 500, DC: "", SpeedLimit: 0, SpeedMin: 0.1, File: "", TLS: true, Compact: true, Format: "csv", Fields: "compact", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results"}
+}
+
+func (c cliFileConfig) Export() cliExportConfig {
+	return cliExportConfig{Format: c.Format, Fields: c.Fields, GitHub: c.GitHub, GitHubSet: true, GHRepo: c.GHRepo, GHBranch: c.GHBranch, GHPath: c.GHPath, GHMessage: c.GHMessage, GHToken: c.GHToken, GHTokenFile: c.GHTokenFile, GHUpload: c.GHUpload}
+}
+
+type cliExportConfigTemplate struct {
+	Config          cliFileConfig    `json:"config"`
+	Description     string           `json:"_description"`
+	Priority        string           `json:"_priority"`
+	Usage           string           `json:"_usage"`
+	ConfigHelp      []cliConfigHelp  `json:"_config_help"`
+	FormatValues    []string         `json:"_format_values"`
+	FieldsValues    []string         `json:"_fields_values"`
+	ModeValues      []string         `json:"_mode_values"`
+	AvailableFields []cliResultField `json:"_available_fields"`
+}
+
+type cliConfigHelp struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Default     string   `json:"default"`
+	Options     []string `json:"options,omitempty"`
+}
+
+func mergeCLIExportConfig(dst *cliExportConfig, src cliExportConfig, onlyProvided bool, provided ...map[string]bool) {
+	isSet := func(flagName string, value string) bool {
+		if onlyProvided {
+			return len(provided) > 0 && provided[0][flagName]
+		}
+		return strings.TrimSpace(value) != ""
+	}
+	if isSet("config", src.ConfigFile) {
+		dst.ConfigFile = src.ConfigFile
+	}
+	if isSet("format", src.Format) {
+		dst.Format = src.Format
+	}
+	if isSet("fields", src.Fields) {
+		dst.Fields = src.Fields
+	}
+	if (!onlyProvided && src.GitHubSet) || (onlyProvided && len(provided) > 0 && provided[0]["github"]) {
+		dst.GitHub = src.GitHub
+		dst.GitHubSet = true
+	}
+	if isSet("ghrepo", src.GHRepo) {
+		dst.GHRepo = src.GHRepo
+	}
+	if isSet("ghbranch", src.GHBranch) {
+		dst.GHBranch = src.GHBranch
+	}
+	if isSet("ghpath", src.GHPath) {
+		dst.GHPath = src.GHPath
+	}
+	if isSet("ghmessage", src.GHMessage) {
+		dst.GHMessage = src.GHMessage
+	}
+	if isSet("ghtoken", src.GHToken) {
+		dst.GHToken = src.GHToken
+	}
+	if isSet("ghtokenfile", src.GHTokenFile) {
+		dst.GHTokenFile = src.GHTokenFile
+	}
+	if isSet("ghupload", src.GHUpload) {
+		dst.GHUpload = src.GHUpload
+	}
+}
+
+func loadOrCreateCLIConfig(path string) (cliFileConfig, bool, error) {
+	path = expandHome(path)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return cliFileConfig{}, false, err
+		}
+		template := cliExportConfigTemplate{
+			Config:          defaultCLIFileConfig(),
+			Description:     "CFData CLI 全量配置；真正配置项在 config 内。",
+			Priority:        "命令行参数 > 配置文件 > 环境变量 > 默认值",
+			Usage:           "首次生成后建议退出并编辑本文件，再重新运行测试。布尔值使用 true/false。",
+			ConfigHelp:      buildCLIConfigHelp(),
+			FormatValues:    []string{"csv", "txt"},
+			FieldsValues:    []string{"compact", "all", "ipport", "ipport,dc,loc", "ipport,latency,dc,loc"},
+			ModeValues:      []string{"official", "nsb"},
+			AvailableFields: cliResultFields,
+		}
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetIndent("", "  ")
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(template); err != nil {
+			return cliFileConfig{}, false, err
+		}
+		if err := os.WriteFile(path, []byte(buf.String()), 0600); err != nil {
+			return cliFileConfig{}, false, err
+		}
+		return cliFileConfig{}, true, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cliFileConfig{}, false, err
+	}
+	cfg := defaultCLIFileConfig()
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return cfg, false, nil
+	}
+	template := cliExportConfigTemplate{Config: defaultCLIFileConfig()}
+	if err := json.Unmarshal(data, &template); err == nil && (template.Config.Mode != "" || template.Config.Format != "" || template.Description != "") {
+		cfg = template.Config
+	} else if err := json.Unmarshal(data, &cfg); err != nil {
+		return cliFileConfig{}, false, fmt.Errorf("解析配置文件失败 %s: %w", path, err)
+	}
+	return cfg, false, nil
+}
+
+func buildCLIConfigHelp() []cliConfigHelp {
+	return []cliConfigHelp{
+		{Name: "cli", Description: "启用 CLI 模式", Default: "true", Options: []string{"true", "false"}},
+		{Name: "mode", Description: "运行模式", Default: "official", Options: []string{"official", "nsb"}},
+		{Name: "iptype", Description: "官方模式 IP 类型", Default: "4", Options: []string{"4", "6"}},
+		{Name: "threads", Description: "扫描并发数", Default: "100"},
+		{Name: "out", Description: "本地导出文件名", Default: "ip.csv"},
+		{Name: "speedtest", Description: "测速线程数；非标为并发测速数，0 表示不测速", Default: "5"},
+		{Name: "progress", Description: "输出进度日志", Default: "true", Options: []string{"true", "false"}},
+		{Name: "nocolor", Description: "禁用 ANSI 颜色输出", Default: "false", Options: []string{"true", "false"}},
+		{Name: "url", Description: "测速下载地址，不含协议前缀", Default: "speed.cloudflare.com/__down?bytes=99999999"},
+		{Name: "debug", Description: "开启调试输出和失败明细", Default: "false", Options: []string{"true", "false"}},
+		{Name: "compactipv4", Description: "精简本地 IPv4 地址库并覆盖 ips-v4.txt", Default: "false", Options: []string{"true", "false"}},
+		{Name: "testport", Description: "官方模式详细测试与测速端口", Default: "443"},
+		{Name: "delay", Description: "延迟阈值，单位毫秒", Default: "500"},
+		{Name: "dc", Description: "官方模式指定数据中心；留空自动选择最低延迟数据中心", Default: ""},
+		{Name: "speedlimit", Description: "官方模式测速达标结果上限；0 表示关闭官方测速", Default: "0"},
+		{Name: "speedmin", Description: "官方模式测速达标下限，单位 MB/s", Default: "0.1"},
+		{Name: "file", Description: "非标模式输入文件路径", Default: ""},
+		{Name: "tls", Description: "非标模式启用 TLS；缺省端口随 TLS 为 443/80", Default: "true", Options: []string{"true", "false"}},
+		{Name: "compact", Description: "非标模式本地 CSV 是否默认精简字段", Default: "true", Options: []string{"true", "false"}},
+		{Name: "format", Description: "导出/上传内容格式", Default: "csv", Options: []string{"csv", "txt"}},
+		{Name: "fields", Description: "导出字段；支持 compact、all、ipport 或逗号分隔字段 key", Default: "compact", Options: []string{"compact", "all", "ipport", "ipport,dc,loc", "ipport,latency,dc,loc"}},
+		{Name: "github", Description: "导出后上传到 GitHub", Default: "false", Options: []string{"true", "false"}},
+		{Name: "ghrepo", Description: "GitHub 仓库，格式 owner/repo", Default: ""},
+		{Name: "ghbranch", Description: "GitHub 分支", Default: "main"},
+		{Name: "ghpath", Description: "GitHub 目标路径；留空时按 format 自动使用 results/ip.csv 或 results/ip.txt；文件不存在会新建，存在会覆盖", Default: "自动按 format 生成"},
+		{Name: "ghmessage", Description: "GitHub 提交信息", Default: "update cfdata results"},
+		{Name: "ghtoken", Description: "GitHub token；不推荐直接写入配置。强烈建议使用仅限制指定仓库读写权限的 token，并确保仓库内无重要数据，避免 token 泄露造成不必要的意外", Default: ""},
+		{Name: "ghtokenfile", Description: "GitHub token 文件路径。强烈建议文件内 token 仅限制指定仓库读写权限，并确保仓库内无重要数据", Default: ""},
+		{Name: "ghupload", Description: "快速上传指定文件到 GitHub，不执行测试；需 github=true", Default: ""},
+	}
+}
+
+func applyCLIFileConfig(cfg *cliConfig, fileCfg cliFileConfig, provided map[string]bool) {
+	setString := func(name string, target *string, value string) {
+		if !provided[name] && strings.TrimSpace(value) != "" {
+			*target = value
+		}
+	}
+	setInt := func(name string, target *int, value int) {
+		if !provided[name] {
+			*target = value
+		}
+	}
+	setFloat := func(name string, target *float64, value float64) {
+		if !provided[name] {
+			*target = value
+		}
+	}
+	if !provided["cli"] && fileCfg.CLI {
+		cfg.enabled = fileCfg.CLI
+	}
+	setString("mode", &cfg.mode, fileCfg.Mode)
+	setInt("iptype", &cfg.ipType, fileCfg.IPType)
+	setInt("threads", &cfg.threads, fileCfg.Threads)
+	setString("out", &cfg.outFile, fileCfg.Out)
+	setInt("speedtest", &cfg.speedTest, fileCfg.SpeedTest)
+	if !provided["progress"] {
+		cfg.showProgress = fileCfg.Progress
+	}
+	if !provided["nocolor"] {
+		cfg.noColor = fileCfg.NoColor
+	}
+	if !provided["url"] && strings.TrimSpace(fileCfg.URL) != "" {
+		speedTestURL = fileCfg.URL
+	}
+	if !provided["debug"] {
+		debugMode = fileCfg.Debug
+	}
+	if !provided["compactipv4"] {
+		cfg.compactIPv4 = fileCfg.CompactIPv4
+	}
+	setInt("testport", &cfg.port, fileCfg.TestPort)
+	setInt("delay", &cfg.delay, fileCfg.Delay)
+	setString("dc", &cfg.dc, fileCfg.DC)
+	setInt("speedlimit", &cfg.speedLimit, fileCfg.SpeedLimit)
+	setFloat("speedmin", &cfg.speedMin, fileCfg.SpeedMin)
+	setString("file", &cfg.file, fileCfg.File)
+	if !provided["tls"] {
+		cfg.enableTLS = fileCfg.TLS
+	}
+	if !provided["compact"] {
+		cfg.compactNSB = fileCfg.Compact
+	}
+}
+
+func defaultCLIConfigPath() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return "cfdata-config.json"
+	}
+	return filepath.Join(filepath.Dir(exe), "cfdata-config.json")
+}
+
+func expandHome(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		home, _ := os.UserHomeDir()
+		return home
+	}
+	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func parseBoolEnv(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func newCLISession(cfg *cliConfig) *appSession {
@@ -233,6 +679,10 @@ func handleCLIMessage(cfg *cliConfig, session *appSession, msgType string, data 
 			debugWrongType("csvHeaderPayload")
 			break
 		}
+		session.nsbMutex.Lock()
+		session.nsbHeaders = append([]string(nil), payload.Headers...)
+		session.nsbRows = append([][]string(nil), payload.Rows...)
+		session.nsbMutex.Unlock()
 		fmt.Printf("%s[nsb-output]%s %s (%d rows)\n", ansiGreen, ansiReset, payload.File, len(payload.Rows))
 	case "speed_test_result":
 		m, ok := data.(map[string]string)
@@ -316,7 +766,7 @@ func runOfficialCLI(cfg *cliConfig) error {
 		dc = pickBestDataCenter(scanResults)
 		if dc == "" {
 			fmt.Printf("%s[official]%s 无法确定数据中心，仅输出扫描结果\n", ansiYellow, ansiReset)
-			return writeOfficialScanCSV(cfg.outFile, scanResults)
+			return writeCLIExportAndMaybeUpload(cfg, officialScanRows(scanResults), "official-scan")
 		}
 		fmt.Printf("%s[official]%s 自动选择数据中心: %s\n", ansiGreen, ansiReset, colorize(dc, ansiBold+ansiGreen))
 	}
@@ -344,7 +794,7 @@ func runOfficialCLI(cfg *cliConfig) error {
 		fmt.Printf("%s[official]%s 开始串行测速，达标上限=%d，下限=%.2f MB/s\n", ansiGreen, ansiReset, cfg.speedLimit, cfg.speedMin)
 		results = runOfficialSpeedTests(context.Background(), session, results, cfg.port, cfg.speedLimit, cfg.speedMin)
 	}
-	return writeOfficialCLIResults(cfg.outFile, scanResults, results)
+	return writeCLIExportAndMaybeUpload(cfg, officialResultRows(scanResults, results), "official")
 }
 
 func runNSBCLI(cfg *cliConfig) error {
@@ -374,7 +824,13 @@ func runNSBCLI(cfg *cliConfig) error {
 	}); err != nil {
 		return cliTaskError(err)
 	}
-	return nil
+	session.nsbMutex.Lock()
+	rows := nsbPayloadRows(session.nsbHeaders, session.nsbRows)
+	session.nsbMutex.Unlock()
+	if len(rows) == 0 {
+		return nil
+	}
+	return writeCLIExportAndMaybeUpload(cfg, rows, "nsb")
 }
 
 func cliTaskError(err error) error {
@@ -482,6 +938,17 @@ func printCLIConfig(cfg *cliConfig) {
 		{"url", lookupCLIFlagDescription(cliCommonFlags, "url"), speedTestURL, "speed.cloudflare.com/__down?bytes=99999999"},
 		{"debug", lookupCLIFlagDescription(cliCommonFlags, "debug"), strconv.FormatBool(debugMode), "false"},
 		{"compactipv4", lookupCLIFlagDescription(cliCommonFlags, "compactipv4"), strconv.FormatBool(cfg.compactIPv4), "false"},
+		{"config", lookupCLIFlagDescription(cliCommonFlags, "config"), cfg.export.ConfigFile, "二进制目录/cfdata-config.json"},
+		{"format", lookupCLIFlagDescription(cliCommonFlags, "format"), cfg.export.Format, "csv"},
+		{"fields", lookupCLIFlagDescription(cliCommonFlags, "fields"), cfg.export.Fields, "compact"},
+		{"github", lookupCLIFlagDescription(cliCommonFlags, "github"), strconv.FormatBool(cfg.export.GitHub), "false"},
+		{"ghrepo", lookupCLIFlagDescription(cliCommonFlags, "ghrepo"), cfg.export.GHRepo, ""},
+		{"ghbranch", lookupCLIFlagDescription(cliCommonFlags, "ghbranch"), cfg.export.GHBranch, "main"},
+		{"ghpath", lookupCLIFlagDescription(cliCommonFlags, "ghpath"), cfg.export.GHPath, "<自动>"},
+		{"ghmessage", lookupCLIFlagDescription(cliCommonFlags, "ghmessage"), cfg.export.GHMessage, "update cfdata results"},
+		{"ghtoken", lookupCLIFlagDescription(cliCommonFlags, "ghtoken"), maskSecret(cfg.export.GHToken), ""},
+		{"ghtokenfile", lookupCLIFlagDescription(cliCommonFlags, "ghtokenfile"), cfg.export.GHTokenFile, ""},
+		{"ghupload", lookupCLIFlagDescription(cliCommonFlags, "ghupload"), cfg.export.GHUpload, ""},
 	})
 	printGroup("官方模式参数", []item{
 		{"iptype", lookupCLIFlagDescription(cliOfficialFlags, "iptype"), strconv.Itoa(cfg.ipType), "4"},
@@ -497,6 +964,16 @@ func printCLIConfig(cfg *cliConfig) {
 		{"compact", lookupCLIFlagDescription(cliNSBFlags, "compact"), strconv.FormatBool(cfg.compactNSB), "true"},
 	})
 	fmt.Println(colorize("----------------------------------------", ansiCyan))
+}
+
+func maskSecret(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	if len(value) <= 8 {
+		return "********"
+	}
+	return value[:4] + "..." + value[len(value)-4:]
 }
 
 func printCLIUsage() {
@@ -717,7 +1194,21 @@ func asInt(v interface{}) int {
 	return 0
 }
 
-func writeOfficialScanCSV(filename string, scanResults []ScanResult) error {
+func writeCLIExportAndMaybeUpload(cfg *cliConfig, rows []cliResultRow, mode string) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	content, err := formatCLIResults(rows, cfg.export)
+	if err != nil {
+		return err
+	}
+	filename := cfg.outFile
+	if strings.TrimSpace(filename) == "" {
+		filename = "ip." + cfg.export.Format
+	}
+	if ext := "." + cfg.export.Format; !strings.HasSuffix(strings.ToLower(filename), ext) {
+		filename = strings.TrimSuffix(filename, filepath.Ext(filename)) + ext
+	}
 	filename = safeFilename(filename)
 	file, err := os.Create(filename)
 	if err != nil {
@@ -729,60 +1220,196 @@ func writeOfficialScanCSV(filename string, scanResults []ScanResult) error {
 		return err
 	}
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-	if err := writer.Write([]string{"IP", "端口", "数据中心", "地区", "城市", "延迟"}); err != nil {
+	if _, err := io.WriteString(file, content); err != nil {
 		return err
 	}
-	for _, res := range scanResults {
-		if err := writer.Write([]string{res.IP, fmt.Sprintf("%d", res.Port), res.DataCenter, res.Region, res.City, res.LatencyStr}); err != nil {
+	fmt.Printf("[%s-output] %s (%d rows, %s)\n", mode, filename, len(rows), cfg.export.Format)
+	if cfg.export.GitHub {
+		if err := uploadCLIExportToGitHub(cfg, content); err != nil {
 			return err
 		}
 	}
-	fmt.Printf("[official-output] %s (%d rows, scan only)\n", filename, len(scanResults))
 	return nil
 }
 
-func writeOfficialCLIResults(filename string, scanResults []ScanResult, testResults []TestResult) error {
-	filename = safeFilename(filename)
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err := writeUTF8BOM(file); err != nil {
-		os.Remove(filename)
-		return err
+func formatCLIResults(rows []cliResultRow, cfg cliExportConfig) (string, error) {
+	fields := resolveCLIFields(cfg.Fields, cfg.Format, rows)
+	if cfg.Format == "txt" {
+		var b strings.Builder
+		for _, row := range rows {
+			ipport := row["ipport"]
+			if ipport == "" {
+				ipport = row["ip"] + ":" + row["port"]
+			}
+			extras := make([]string, 0, len(fields))
+			for _, field := range fields {
+				if field == "ipport" {
+					continue
+				}
+				if value := strings.TrimSpace(row[field]); value != "" {
+					extras = append(extras, value)
+				}
+			}
+			b.WriteString(ipport)
+			if len(extras) > 0 {
+				b.WriteString("#")
+				b.WriteString(strings.Join(extras, "-"))
+			}
+			b.WriteString("\n")
+		}
+		return b.String(), nil
 	}
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
-	if len(testResults) == 0 {
-		if err := writer.Write([]string{"IP", "端口", "数据中心", "地区", "城市", "延迟"}); err != nil {
-			return err
+	var b strings.Builder
+	writer := csv.NewWriter(&b)
+	headers := make([]string, 0, len(fields))
+	for _, field := range fields {
+		headers = append(headers, cliFieldLabel(field))
+	}
+	if err := writer.Write(headers); err != nil {
+		return "", err
+	}
+	for _, row := range rows {
+		values := make([]string, 0, len(fields))
+		for _, field := range fields {
+			values = append(values, row[field])
 		}
-		for _, res := range scanResults {
-			if err := writer.Write([]string{res.IP, fmt.Sprintf("%d", res.Port), res.DataCenter, res.Region, res.City, res.LatencyStr}); err != nil {
-				return err
+		if err := writer.Write(values); err != nil {
+			return "", err
+		}
+	}
+	writer.Flush()
+	return b.String(), writer.Error()
+}
+
+func resolveCLIFields(spec, format string, rows []cliResultRow) []string {
+	spec = strings.TrimSpace(strings.ToLower(spec))
+	if spec == "" || spec == "compact" {
+		if format == "txt" {
+			return []string{"ipport", "dc", "loc"}
+		}
+		return []string{"ip", "port", "tls", "latency", "speed", "outboundIP", "ipType", "dc", "loc", "region", "city", "asnNumber", "asnOrg"}
+	}
+	if spec == "ipport" {
+		return []string{"ipport"}
+	}
+	if spec == "all" {
+		fields := make([]string, 0, len(cliResultFields))
+		for _, field := range cliResultFields {
+			if field.Key == "ipport" {
+				continue
+			}
+			for _, row := range rows {
+				if strings.TrimSpace(row[field.Key]) != "" {
+					fields = append(fields, field.Key)
+					break
+				}
 			}
 		}
-		fmt.Printf("[official-output] %s (%d rows, scan only)\n", filename, len(scanResults))
-		return nil
+		return fields
 	}
+	parts := strings.Split(spec, ",")
+	fields := make([]string, 0, len(parts))
+	for _, part := range parts {
+		field := strings.TrimSpace(part)
+		if field != "" {
+			fields = append(fields, field)
+		}
+	}
+	if len(fields) == 0 {
+		return []string{"ipport"}
+	}
+	return fields
+}
 
-	if err := writer.Write([]string{"IP", "端口", "数据中心", "地区", "城市", "丢包率", "最小延迟", "最大延迟", "平均延迟", "下载速度"}); err != nil {
-		return err
+func cliFieldLabel(key string) string {
+	for _, field := range cliResultFields {
+		if field.Key == key {
+			return field.Label
+		}
+	}
+	return key
+}
+
+func officialScanRows(scanResults []ScanResult) []cliResultRow {
+	rows := make([]cliResultRow, 0, len(scanResults))
+	for _, res := range scanResults {
+		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(res.Port), "ipport": fmt.Sprintf("%s:%d", res.IP, res.Port), "dc": res.DataCenter, "region": res.Region, "city": res.City, "latency": res.LatencyStr})
+	}
+	return rows
+}
+
+func officialResultRows(scanResults []ScanResult, testResults []TestResult) []cliResultRow {
+	if len(testResults) == 0 {
+		return officialScanRows(scanResults)
 	}
 	scanByIP := make(map[string]ScanResult, len(scanResults))
 	for _, res := range scanResults {
 		scanByIP[res.IP] = res
 	}
+	rows := make([]cliResultRow, 0, len(testResults))
 	for _, res := range testResults {
 		scan := scanByIP[res.IP]
-		if err := writer.Write([]string{res.IP, fmt.Sprintf("%d", scan.Port), scan.DataCenter, scan.Region, scan.City, fmt.Sprintf("%.0f%%", res.LossRate*100), fmt.Sprintf("%d ms", res.MinLatency/time.Millisecond), fmt.Sprintf("%d ms", res.MaxLatency/time.Millisecond), fmt.Sprintf("%d ms", res.AvgLatency/time.Millisecond), res.Speed}); err != nil {
-			return err
+		port := scan.Port
+		if port == 0 {
+			port = res.Port
+		}
+		rows = append(rows, cliResultRow{"ip": res.IP, "port": strconv.Itoa(port), "ipport": fmt.Sprintf("%s:%d", res.IP, port), "dc": scan.DataCenter, "region": scan.Region, "city": scan.City, "latency": fmt.Sprintf("%d ms", res.AvgLatency/time.Millisecond), "speed": res.Speed})
+	}
+	return rows
+}
+
+func nsbPayloadRows(headers []string, rows [][]string) []cliResultRow {
+	result := make([]cliResultRow, 0, len(rows))
+	for _, row := range rows {
+		item := cliResultRow{}
+		for idx, header := range headers {
+			if idx >= len(row) {
+				continue
+			}
+			if key := cliFieldKeyFromHeader(header); key != "" {
+				item[key] = row[idx]
+			}
+		}
+		item["ipport"] = item["ip"] + ":" + item["port"]
+		result = append(result, item)
+	}
+	return result
+}
+
+func cliFieldKeyFromHeader(header string) string {
+	header = normalizeNSBHeaderForCLI(header)
+	for _, field := range cliResultFields {
+		if field.Label == header {
+			return field.Key
 		}
 	}
-	fmt.Printf("[official-output] %s (%d test rows)\n", filename, len(testResults))
+	return ""
+}
+
+func normalizeNSBHeaderForCLI(header string) string {
+	switch strings.TrimSpace(header) {
+	case "IP":
+		return "IP地址"
+	case "端口":
+		return "端口号"
+	default:
+		return strings.TrimSpace(header)
+	}
+}
+
+func uploadCLIExportToGitHub(cfg *cliConfig, content string) error {
+	parts := strings.Split(strings.TrimSpace(cfg.export.GHRepo), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("-ghrepo 必须是 owner/repo")
+	}
+	if strings.TrimSpace(cfg.export.GHToken) == "" {
+		return fmt.Errorf("启用 -github 时需要 -ghtoken、-ghtokenfile、CFDATA_GHTOKEN 或 GITHUB_TOKEN")
+	}
+	params := githubUploadRequest{Token: cfg.export.GHToken, Owner: parts[0], Repo: parts[1], Branch: cfg.export.GHBranch, Path: cfg.export.GHPath, Message: cfg.export.GHMessage, Content: content}
+	if err := uploadGitHubContent(context.Background(), params); err != nil {
+		return err
+	}
+	fmt.Printf("%s[github]%s uploaded %s\n", ansiGreen, ansiReset, githubRawURL(params))
 	return nil
 }

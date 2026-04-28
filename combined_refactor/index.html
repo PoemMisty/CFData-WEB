@@ -91,10 +91,17 @@
             box-shadow: var(--shadow);
         }
 
-        .settings-toggle {
+        .top-actions {
             position: absolute;
             right: 20px;
             top: 20px;
+            display: flex;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        .settings-toggle,
+        .github-link {
             background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 10px;
@@ -105,13 +112,15 @@
             align-items: center;
             justify-content: center;
             font-size: 18px;
-            z-index: 100;
             line-height: 1;
             transition: all 0.2s;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            color: var(--text-main);
+            text-decoration: none;
         }
 
-        .settings-toggle:hover {
+        .settings-toggle:hover,
+        .github-link:hover {
             transform: scale(1.1);
             border-color: var(--primary-color);
         }
@@ -641,6 +650,201 @@
             padding: 0;
         }
 
+        .modal-mask {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 18px;
+            background: rgba(15, 23, 42, 0.58);
+            z-index: 1000;
+        }
+
+        .modal-mask.active {
+            display: flex;
+        }
+
+        .result-modal {
+            width: min(760px, 100%);
+            max-height: 90vh;
+            overflow: hidden;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
+            padding: 18px;
+        }
+
+        .modal-body {
+            max-height: calc(90vh - 96px);
+            overflow: auto;
+            padding-right: 6px;
+        }
+
+        .modal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .modal-body::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.55);
+            border-radius: 999px;
+        }
+
+        .modal-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .modal-head h3 {
+            margin: 0;
+        }
+
+        .modal-close {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .modal-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .modal-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .modal-field.full {
+            grid-column: 1 / -1;
+        }
+
+        .modal-field label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 700;
+        }
+
+        .field-picker {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .field-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 12px;
+        }
+
+        .field-pill input {
+            width: auto;
+        }
+
+        .order-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .order-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-color);
+            font-size: 12px;
+        }
+
+        .order-item button {
+            width: auto;
+            height: auto;
+            padding: 3px 7px;
+            border-radius: 6px;
+            border: 0;
+            color: #fff;
+            background: var(--primary-color);
+            cursor: pointer;
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .github-account-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .github-account-row select {
+            flex: 1;
+        }
+
+        .inline-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 700;
+        }
+
+        .inline-check input {
+            width: auto;
+        }
+
+        .result-preview,
+        .upload-status {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-color);
+            padding: 10px;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow: auto;
+            max-height: 120px;
+        }
+
+        .upload-status.error {
+            color: var(--error-color);
+            border-color: var(--error-color);
+        }
+
+        .upload-status.success {
+            color: #059669;
+            border-color: #10b981;
+        }
+
+        .upload-status .copy-ip {
+            color: inherit;
+        }
+
         .action-btn.selected {
             background: linear-gradient(135deg, #10b981, #34d399);
         }
@@ -784,9 +988,12 @@
 <body>
     <div class="container">
         <h1>Cloudflare IP Data</h1>
-        <button class="settings-toggle" id="settingsToggle" onclick="toggleSettingsMenu(event)" title="设置">
-            <span id="themeIcon">⚙️</span>
-        </button>
+        <div class="top-actions">
+            <a class="github-link" href="https://github.com/PoemMisty/CFData-WEB" target="_blank" rel="noopener noreferrer" title="打开 GitHub 仓库">GitHub</a>
+            <button class="settings-toggle" id="settingsToggle" onclick="toggleSettingsMenu(event)" title="设置">
+                <span id="themeIcon">⚙️</span>
+            </button>
+        </div>
         <div id="settingsMenu" class="settings-menu hidden">
             <div class="settings-title">颜色模式</div>
             <div class="theme-options">
@@ -871,12 +1078,15 @@
             <div id="nsbControls" class="hidden">
                 <div class="control-title">
                     <span>非标参数</span>
-                    <span style="font-size:12px;color:var(--text-secondary);">请上传txt文件（每行一个IP，格式：IP+空格+端口，示例1.2.3.4
-                        443）</span>
+                    <span style="font-size:12px;color:var(--text-secondary);">支持上传 txt/csv 文件或填写网络 URL（二选一）；若识别失败，请整理为每行一个目标，格式：IP 空格 端口，例如 1.2.3.4 443</span>
                 </div>
                 <div class="option-item full-width">
                     <span class="label">📄 选择 IP 文件</span>
-                    <input id="ipFileInput" type="file" accept=".txt,.csv,text/plain">
+                    <input id="ipFileInput" type="file" accept=".txt,.csv,text/plain" onchange="syncNSBInputMode('file')">
+                </div>
+                <div class="option-item full-width">
+                    <span class="label">🌐 网络 URL</span>
+                    <input id="nsbSourceUrl" type="url" placeholder="https://example.com/ip-list.txt" oninput="syncNSBInputMode('url')">
                 </div>
                 <div class="option-item">
                     <span class="label">🚀 并发数</span>
@@ -960,7 +1170,7 @@
                     <span>扫描结果 <span class="badge" id="scanCount">0</span></span>
                     <span class="table-actions">
                         <label id="nsbCompactToggleWrap" class="compact-toggle"><input id="nsbCompactView" type="checkbox" checked onchange="setNSBCompactView(this.checked)"> 精简表格</label>
-                        <button class="action-btn export-btn" onclick="exportScanCSV()">📥 导出 CSV</button>
+                        <button class="action-btn export-btn" onclick="openResultModal('scan')">📥 结果操作</button>
                     </span>
                 </h3>
                 <div class="scroll-table" style="max-height:520px;">
@@ -984,7 +1194,7 @@
             <div class="section-box">
                 <h3 style="display:flex;justify-content:space-between;align-items:center;">
                     <span>详细测试结果 <span class="badge" id="testCount">0</span></span>
-                    <button class="action-btn export-btn" onclick="exportTestCSV()">📥 导出 CSV</button>
+                    <button class="action-btn export-btn" onclick="openResultModal('test')">📥 结果操作</button>
                 </h3>
                 <div class="scroll-table" style="max-height:520px;">
                     <table id="testTable">
@@ -1007,6 +1217,90 @@
 
         <div class="log-box" id="logBox">
             <div>[系统] 等待操作...</div>
+        </div>
+    </div>
+
+    <div class="modal-mask" id="resultModalMask">
+        <div class="result-modal">
+            <div class="modal-head">
+                <h3 id="resultModalTitle">结果操作</h3>
+                <button class="modal-close" onclick="closeResultModal()">×</button>
+            </div>
+            <div class="modal-body">
+            <div class="modal-grid">
+                <div class="modal-field">
+                    <label>文件格式</label>
+                    <select id="resultFormat" onchange="handleResultFormatChange()">
+                        <option value="csv">CSV</option>
+                        <option value="txt">TXT</option>
+                    </select>
+                </div>
+                <div class="modal-field">
+                    <label>文件名</label>
+                    <input id="resultFileName" type="text" value="cfdata-results">
+                </div>
+                <div class="modal-field full">
+                    <label>字段选择</label>
+                    <div class="field-picker" id="resultFieldPicker"></div>
+                </div>
+                <div class="modal-field full">
+                    <label>输出顺序</label>
+                    <div class="order-list" id="resultOrderList"></div>
+                </div>
+                <div class="modal-field github-field">
+                    <label>GitHub 账户</label>
+                    <div class="github-account-row">
+                        <select id="githubAccountSelect" onchange="loadSelectedGitHubAccount()"></select>
+                        <button class="action-btn" onclick="deleteSelectedGitHubAccount()">删除</button>
+                    </div>
+                </div>
+                <div class="modal-field github-field">
+                    <label>账户名称</label>
+                    <input id="githubAccountName" type="text" placeholder="例如 main-account">
+                </div>
+                <div class="modal-field github-field">
+                    <label>GitHub Token</label>
+                    <input id="githubToken" type="password" autocomplete="off" placeholder="repo 权限 token">
+                </div>
+                <div class="modal-field github-field">
+                    <label>仓库 owner/repo</label>
+                    <input id="githubRepo" type="text" placeholder="owner/repo">
+                </div>
+                <div class="modal-field github-field">
+                    <label>分支</label>
+                    <input id="githubBranch" type="text" value="main">
+                </div>
+                <div class="modal-field github-field">
+                    <label>目标路径</label>
+                    <input id="githubPath" type="text" placeholder="results/ip.csv 或 results/ip.txt">
+                </div>
+                <div class="modal-field full github-field">
+                    <label>提交信息</label>
+                    <input id="githubMessage" type="text" value="update cfdata results">
+                </div>
+                <div class="modal-field full github-field">
+                    <label class="inline-check"><input id="githubSaveToken" type="checkbox"> 保存 token 到本机浏览器（同时保存 SHA-256 指纹用于识别，多账户可选）</label>
+                </div>
+                <div class="modal-field full github-field">
+                    <label>快速上传指定文件（不使用上方结果内容）</label>
+                    <input id="githubQuickFile" type="file" accept=".txt,.csv,text/plain,text/csv">
+                </div>
+                <div class="modal-field full">
+                    <label>输出示例</label>
+                    <pre class="result-preview" id="resultPreview">暂无预览</pre>
+                </div>
+                <div class="modal-field full github-field">
+                    <label>上传状态</label>
+                    <div class="upload-status" id="githubUploadStatus">等待上传</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="selectResultFields(true)">全选</button>
+                <button class="action-btn" onclick="selectResultFields(false)">仅 ip:port</button>
+                <button class="action-btn export-btn" onclick="downloadSelectedResults()">导出文件</button>
+                <button class="action-btn export-btn" onclick="uploadSelectedResultsToGitHub()">上传 GitHub</button>
+            </div>
+            </div>
         </div>
     </div>
 
@@ -1033,6 +1327,9 @@
         let runningTaskLabel = '';
         let runningTaskMode = '';
         let runningTaskTab = 'scan';
+        let resultModalMode = 'scan';
+        let resultFieldOrder = [];
+        const githubAccountStorageKey = 'cfdata-github-accounts';
 
         const LATENCY_GREEN = 100;
         const LATENCY_YELLOW = 200;
@@ -1047,19 +1344,38 @@
         const officialControls = document.getElementById('officialControls');
         const nsbControls = document.getElementById('nsbControls');
         const fileInput = document.getElementById('ipFileInput');
+        const nsbSourceUrlInput = document.getElementById('nsbSourceUrl');
 
         document.getElementById('ipFileInput').addEventListener('change', e => {
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file) {
+                uploadedFileName = '';
+                uploadedFileContent = '';
+                syncNSBInputMode();
+                return;
+            }
             uploadedFileName = file.name || 'upload.txt';
             const reader = new FileReader();
             reader.onload = () => {
                 uploadedFileContent = String(reader.result || '');
+                syncNSBInputMode('file');
                 log(`已选择文件: ${uploadedFileName}`);
             };
             reader.onerror = () => log('读取文件失败');
             reader.readAsText(file);
         });
+
+        function syncNSBInputMode(preferred) {
+            const hasFile = !!(fileInput && fileInput.files && fileInput.files.length);
+            const hasURL = !!(nsbSourceUrlInput && nsbSourceUrlInput.value.trim());
+            if (preferred === 'file' && hasFile && nsbSourceUrlInput) {
+                nsbSourceUrlInput.value = '';
+            } else if (preferred === 'url' && hasURL && fileInput) {
+                fileInput.value = '';
+                uploadedFileName = '';
+                uploadedFileContent = '';
+            }
+        }
 
         function applyTheme(theme) {
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1868,8 +2184,12 @@
         }
 
         function startNSBTask() {
-            if (!uploadedFileContent.trim()) {
-                alert('请先上传IP文件，格式：ip 端口（空格分隔）');
+            syncNSBInputMode();
+            const sourceURL = nsbSourceUrlInput ? nsbSourceUrlInput.value.trim() : '';
+            const hasFile = !!uploadedFileContent.trim();
+            const hasURL = !!sourceURL;
+            if (hasFile === hasURL) {
+                alert('请选择本地文件或填写网络 URL（二选一）');
                 return;
             }
 
@@ -1911,7 +2231,8 @@
                 type: 'start_nsb_task',
                 data: {
                     fileName: uploadedFileName,
-                    fileContent: uploadedFileContent,
+                    fileContent: hasFile ? uploadedFileContent : '',
+                    sourceURL: hasURL ? sourceURL : '',
                     outFile,
                     maxThreads,
                     speedTest,
@@ -1934,45 +2255,329 @@
                 .replace(/'/g, '&#039;');
         }
 
-        function exportScanCSV() {
-            if (currentMode === 'official') {
-                if (scanData.length === 0) return alert('暂无可导出结果');
-                let csv = 'IP,端口,数据中心,地区,城市,延迟\n';
-                scanData.forEach((r) => {
-                    csv += `${r.IP},${r.Port ?? ''},${r.DataCenter},${r.Region},${r.City},${r.LatencyStr}\n`;
-                });
-                downloadCSV(csv, 'Cloudflare_Scan_Results');
-                return;
+        const RESULT_FIELDS = [
+            { key: 'ipport', label: 'ip:port', txt: true },
+            { key: 'ip', label: 'IP地址' },
+            { key: 'port', label: '端口号' },
+            { key: 'tls', label: 'TLS' },
+            { key: 'latency', label: '网络延迟' },
+            { key: 'speed', label: '下载速度' },
+            { key: 'outboundIP', label: '出站IP' },
+            { key: 'ipType', label: 'IP类型' },
+            { key: 'dc', label: '数据中心', txt: true },
+            { key: 'loc', label: '源IP位置' },
+            { key: 'region', label: '地区', txt: true },
+            { key: 'city', label: '城市' },
+            { key: 'asnNumber', label: 'ASN号码' },
+            { key: 'asnOrg', label: 'ASN组织' },
+            { key: 'visitScheme', label: '访问协议' },
+            { key: 'tlsVersion', label: 'TLS版本' },
+            { key: 'sni', label: 'SNI' },
+            { key: 'httpVersion', label: 'HTTP版本' },
+            { key: 'warp', label: 'WARP' },
+            { key: 'gateway', label: 'Gateway' },
+            { key: 'rbi', label: 'RBI' },
+            { key: 'kex', label: '密钥交换' },
+            { key: 'timestamp', label: '时间戳' },
+        ];
+
+        function openResultModal(mode) {
+            resultModalMode = mode;
+            const rows = getCurrentResultRows(resultModalMode);
+            if (!rows.length) return alert('暂无可操作结果');
+            document.getElementById('resultModalTitle').textContent = '结果操作';
+            document.getElementById('resultFormat').value = 'csv';
+            document.getElementById('resultFileName').value = currentMode === 'nsb' ? 'Cloudflare_NSB_Results' : (resultModalMode === 'test' ? 'Cloudflare_SpeedTest_Results' : 'Cloudflare_Scan_Results');
+            resultFieldOrder = getDefaultResultFieldOrder(document.getElementById('resultFormat').value);
+            renderGitHubAccounts();
+            renderResultFieldOptions();
+            document.getElementById('resultModalMask').classList.add('active');
+        }
+
+        function closeResultModal() {
+            document.getElementById('resultModalMask').classList.remove('active');
+        }
+
+        function getDefaultResultFieldOrder(format) {
+            if (format === 'txt') return ['ipport', 'dc', 'loc'];
+            if (format === 'csv') return getCompactResultFieldOrder();
+            const rows = getCurrentResultRows(resultModalMode);
+            if (!rows.length) return ['ipport'];
+            return RESULT_FIELDS.filter((f) => rows.some((r) => String(r[f.key] ?? '').trim() !== '') && f.key !== 'ipport').map((f) => f.key);
+        }
+
+        function getAllResultFieldOrder() {
+            const rows = getCurrentResultRows(resultModalMode);
+            if (!rows.length) return ['ipport'];
+            return RESULT_FIELDS.filter((f) => rows.some((r) => String(r[f.key] ?? '').trim() !== '') && f.key !== 'ipport').map((f) => f.key);
+        }
+
+        function getCompactResultFieldOrder() {
+            if (currentMode === 'nsb') return ['ip', 'port', 'tls', 'latency', 'speed', 'outboundIP', 'ipType', 'dc', 'loc', 'region', 'city', 'asnNumber', 'asnOrg'];
+            if (resultModalMode === 'test') return ['ip', 'port', 'latency', 'speed'];
+            return ['ip', 'port', 'dc', 'region', 'city', 'latency'];
+        }
+
+        function renderResultFieldOptions() {
+            const format = document.getElementById('resultFormat').value;
+            if (!resultFieldOrder.length) resultFieldOrder = getDefaultResultFieldOrder(format);
+            if (format === 'txt' && !resultFieldOrder.includes('ipport')) resultFieldOrder.unshift('ipport');
+            const rows = getCurrentResultRows(resultModalMode);
+            const available = RESULT_FIELDS.filter((f) => f.key === 'ipport' || rows.some((r) => String(r[f.key] ?? '').trim() !== ''));
+            document.querySelectorAll('.github-field').forEach((el) => el.style.display = '');
+            document.getElementById('resultFieldPicker').innerHTML = available.map((f) => `<label class="field-pill"><input type="checkbox" value="${f.key}" ${resultFieldOrder.includes(f.key) ? 'checked' : ''} onchange="toggleResultField('${f.key}', this.checked)"> ${f.label}</label>`).join('');
+            renderResultOrderList();
+            updateResultPreview();
+        }
+
+        function handleResultFormatChange() {
+            const format = document.getElementById('resultFormat').value;
+            resultFieldOrder = getDefaultResultFieldOrder(format);
+            const pathInput = document.getElementById('githubPath');
+            if (pathInput && pathInput.value.trim()) {
+                pathInput.value = pathInput.value.trim().replace(/\.(csv|txt)$/i, `.${format}`);
             }
+            renderResultFieldOptions();
+        }
 
-            if (!nsbRows.length) return alert('暂无可导出结果');
-            const exportHeaders = filterNSBHeaders(nsbHeaders);
-            let csv = exportHeaders.join(',') + '\n';
-            nsbRows.forEach((r) => {
-                const row = filterNSBRow(nsbHeaders, r);
-                csv += row.map((c) => `"${String(c ?? '').replaceAll('"', '""')}"`).join(',') + '\n';
+        function getGitHubAccounts() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(githubAccountStorageKey) || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function saveGitHubAccounts(accounts) {
+            localStorage.setItem(githubAccountStorageKey, JSON.stringify(accounts));
+        }
+
+        function renderGitHubAccounts() {
+            const select = document.getElementById('githubAccountSelect');
+            if (!select) return;
+            const accounts = getGitHubAccounts();
+            select.innerHTML = '<option value="">新账户/不使用保存配置</option>' + accounts.map((a, i) => `<option value="${i}">${escapeHTML(a.name || a.repo || 'GitHub账户')} ${a.tokenHash ? '(' + escapeHTML(a.tokenHash.slice(0, 10)) + ')' : ''}</option>`).join('');
+        }
+
+        function loadSelectedGitHubAccount() {
+            const select = document.getElementById('githubAccountSelect');
+            const idx = parseInt(select.value, 10);
+            if (Number.isNaN(idx)) return;
+            const account = getGitHubAccounts()[idx];
+            if (!account) return;
+            document.getElementById('githubAccountName').value = account.name || '';
+            document.getElementById('githubRepo').value = account.repo || '';
+            document.getElementById('githubBranch').value = account.branch || 'main';
+            document.getElementById('githubPath').value = account.path || '';
+            document.getElementById('githubMessage').value = account.message || 'update cfdata results';
+            document.getElementById('githubToken').value = account.token || '';
+            document.getElementById('githubSaveToken').checked = !!account.token;
+        }
+
+        function deleteSelectedGitHubAccount() {
+            const select = document.getElementById('githubAccountSelect');
+            const idx = parseInt(select.value, 10);
+            if (Number.isNaN(idx)) return;
+            const accounts = getGitHubAccounts();
+            accounts.splice(idx, 1);
+            saveGitHubAccounts(accounts);
+            renderGitHubAccounts();
+        }
+
+        async function sha256Hex(text) {
+            if (!text || !crypto.subtle) return '';
+            const data = new TextEncoder().encode(text);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function saveCurrentGitHubAccount(payload) {
+            const name = document.getElementById('githubAccountName').value.trim() || payload.repo;
+            if (!name) return;
+            const saveToken = document.getElementById('githubSaveToken').checked;
+            const accounts = getGitHubAccounts();
+            const tokenHash = await sha256Hex(payload.token);
+            const next = {
+                name,
+                repo: `${payload.owner}/${payload.repo}`,
+                branch: payload.branch,
+                path: payload.path,
+                message: payload.message,
+                tokenHash,
+                token: saveToken ? payload.token : '',
+            };
+            const existing = accounts.findIndex((a) => a.name === name);
+            if (existing >= 0) accounts[existing] = next;
+            else accounts.push(next);
+            saveGitHubAccounts(accounts);
+            renderGitHubAccounts();
+        }
+
+        function renderResultOrderList() {
+            const byKey = Object.fromEntries(RESULT_FIELDS.map((f) => [f.key, f]));
+            document.getElementById('resultOrderList').innerHTML = resultFieldOrder.map((key, idx) => `<div class="order-item"><span>${byKey[key]?.label || key}</span><span><button onclick="moveResultField(${idx}, -1)">↑</button> <button onclick="moveResultField(${idx}, 1)">↓</button></span></div>`).join('');
+            updateResultPreview();
+        }
+
+        function toggleResultField(key, checked) {
+            if (checked && !resultFieldOrder.includes(key)) resultFieldOrder.push(key);
+            if (!checked) resultFieldOrder = resultFieldOrder.filter((k) => k !== key);
+            renderResultOrderList();
+        }
+
+        function moveResultField(index, delta) {
+            const next = index + delta;
+            if (next < 0 || next >= resultFieldOrder.length) return;
+            [resultFieldOrder[index], resultFieldOrder[next]] = [resultFieldOrder[next], resultFieldOrder[index]];
+            renderResultFieldOptions();
+        }
+
+        function selectResultFields(all) {
+            resultFieldOrder = all ? getAllResultFieldOrder() : ['ipport'];
+            renderResultFieldOptions();
+        }
+
+        function getCurrentResultRows(mode) {
+            if (currentMode === 'nsb') return getNSBResultObjects();
+            if (mode === 'test') return testData.map(testResultToObject);
+            return scanData.map(scanResultToObject);
+        }
+
+        function scanResultToObject(r) {
+            return { ip: r.IP || '', port: String(r.Port ?? ''), ipport: `${r.IP || ''}:${r.Port ?? ''}`, dc: r.DataCenter || '', region: r.Region || '', city: r.City || '', latency: r.LatencyStr || '' };
+        }
+
+        function testResultToObject(r) {
+            const port = r.Port || parseInt(document.getElementById('testPort').value) || 443;
+            return { ip: r.IP || '', port: String(port), ipport: `${r.IP || ''}:${port}`, latency: `${(r.AvgLatency / 1_000_000).toFixed(0)} ms`, speed: r.Speed || '未测速' };
+        }
+
+        function getNSBResultObjects() {
+            const sourceHeaders = nsbHeaders.length ? nsbHeaders : NSB_LIVE_HEADERS;
+            const sourceRows = nsbRows.length ? nsbRows : nsbLiveRows.map(nsbRowToArray);
+            return sourceRows.map((row) => {
+                const obj = {};
+                sourceHeaders.map(normalizeNSBHeader).forEach((header, idx) => {
+                    const field = RESULT_FIELDS.find((f) => f.label === header);
+                    if (field) obj[field.key] = row[idx] ?? '';
+                });
+                obj.ip = obj.ip || row[sourceHeaders.map(normalizeNSBHeader).indexOf('IP地址')] || '';
+                obj.port = obj.port || row[sourceHeaders.map(normalizeNSBHeader).indexOf('端口号')] || '';
+                obj.ipport = `${obj.ip}:${obj.port}`;
+                return obj;
             });
-            downloadCSV(csv, 'Cloudflare_NSB_Results');
         }
 
-        function exportTestCSV() {
-            if (!testData.length) return alert('暂无可导出结果');
-            let csv = 'IP,端口,丢包率,最小延迟,最大延迟,平均延迟,下载速度\n';
-            const defaultPort = parseInt(document.getElementById('testPort').value) || 443;
-            testData.forEach((r) => {
-                csv += `${r.IP},${r.Port || defaultPort},${(r.LossRate * 100).toFixed(0)}%,${(r.MinLatency / 1_000_000).toFixed(0)} ms,${(r.MaxLatency / 1_000_000).toFixed(0)} ms,${(r.AvgLatency / 1_000_000).toFixed(0)} ms,${r.Speed || '未测速'}\n`;
+        function buildSelectedResultContent(format) {
+            const rows = getCurrentResultRows(resultModalMode);
+            if (!rows.length) throw new Error('暂无可操作结果');
+            const fields = resultFieldOrder.length ? resultFieldOrder : getDefaultResultFieldOrder(format);
+            if (format === 'txt') {
+                return rows.map((r) => {
+                    const ipport = r.ipport || `${r.ip || ''}:${r.port || ''}`;
+                    const extras = fields.filter((k) => k !== 'ipport').map((k) => r[k]).filter((v) => String(v ?? '').trim() !== '');
+                    return extras.length ? `${ipport}#${extras.join('-')}` : ipport;
+                }).join('\n') + '\n';
+            }
+            const byKey = Object.fromEntries(RESULT_FIELDS.map((f) => [f.key, f]));
+            const headers = fields.map((k) => byKey[k]?.label || k);
+            const body = rows.map((r) => fields.map((k) => `"${String(r[k] ?? '').replaceAll('"', '""')}"`).join(',')).join('\n');
+            return headers.join(',') + '\n' + body + '\n';
+        }
+
+        function buildResultPreview(format) {
+            const rows = getCurrentResultRows(resultModalMode);
+            if (!rows.length) return '暂无预览';
+            const fields = resultFieldOrder.length ? resultFieldOrder : getDefaultResultFieldOrder(format);
+            const first = rows[0];
+            if (format === 'txt') {
+                const ipport = first.ipport || `${first.ip || ''}:${first.port || ''}`;
+                const extras = fields.filter((k) => k !== 'ipport').map((k) => first[k]).filter((v) => String(v ?? '').trim() !== '');
+                return extras.length ? `${ipport}#${extras.join('-')}` : ipport;
+            }
+            const byKey = Object.fromEntries(RESULT_FIELDS.map((f) => [f.key, f]));
+            const headers = fields.map((k) => byKey[k]?.label || k).join(',');
+            const values = fields.map((k) => `"${String(first[k] ?? '').replaceAll('"', '""')}"`).join(',');
+            return `${headers}\n${values}`;
+        }
+
+        function updateResultPreview() {
+            const el = document.getElementById('resultPreview');
+            if (!el) return;
+            try {
+                el.textContent = buildResultPreview(document.getElementById('resultFormat').value);
+            } catch (err) {
+                el.textContent = err.message || '预览失败';
+            }
+        }
+
+        function setGitHubUploadStatus(text, type = '') {
+            const el = document.getElementById('githubUploadStatus');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('error', 'success');
+            if (type) el.classList.add(type);
+        }
+
+        function renderRawURLCopy(rawURL) {
+            if (!rawURL) return;
+            const el = document.getElementById('githubUploadStatus');
+            if (!el) return;
+            const safeURL = escapeHTML(rawURL);
+            const jsURL = escapeJSString(rawURL);
+            el.innerHTML = `上传完成：<span class="copy-ip" onclick="copyToClipboard('${jsURL}', event)" title="点击复制 Raw 地址">${safeURL}</span>`;
+        }
+
+        function readQuickUploadFile() {
+            const input = document.getElementById('githubQuickFile');
+            const file = input && input.files ? input.files[0] : null;
+            if (!file) return Promise.resolve(null);
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve({ name: file.name, content: String(reader.result || '') });
+                reader.onerror = () => reject(new Error('读取快速上传文件失败'));
+                reader.readAsText(file);
             });
-            downloadCSV(csv, 'Cloudflare_SpeedTest_Results');
         }
 
-        function downloadCSV(csvContent, nameBase) {
-            const timestamp = new Date().toISOString().replace(/[-:T]/g, '').split('.')[0];
-            const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `${nameBase}_${timestamp}.csv`;
-            link.click();
+        function downloadSelectedResults() {
+            const format = document.getElementById('resultFormat').value;
+            const content = buildSelectedResultContent(format);
+            const name = document.getElementById('resultFileName').value.trim() || 'cfdata-results';
+            downloadFile(content, name, format);
         }
+
+        async function uploadSelectedResultsToGitHub() {
+            const format = document.getElementById('resultFormat').value;
+            const quickFile = await readQuickUploadFile();
+            const content = quickFile ? quickFile.content : buildSelectedResultContent(format);
+            const repoParts = document.getElementById('githubRepo').value.trim().split('/');
+            if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) return alert('仓库格式应为 owner/repo');
+            const payload = {
+                token: document.getElementById('githubToken').value.trim(),
+                owner: repoParts[0], repo: repoParts[1],
+                branch: document.getElementById('githubBranch').value.trim() || 'main',
+                path: document.getElementById('githubPath').value.trim() || (quickFile ? `results/${quickFile.name}` : ''),
+                message: document.getElementById('githubMessage').value.trim() || 'update cfdata results',
+                content,
+            };
+            if (!payload.token || !payload.path) return alert('Token 和目标路径不能为空');
+            await saveCurrentGitHubAccount(payload);
+            setGitHubUploadStatus(`上传中: ${quickFile ? quickFile.name : payload.path}`);
+            wsSend({ type: 'github_upload', data: payload });
+            log('已提交 GitHub 上传请求');
+        }
+
+        function downloadFile(content, nameBase, ext) {
+			const timestamp = new Date().toISOString().replace(/[-:T]/g, '').split('.')[0];
+			const mime = ext === 'csv' ? 'text/csv;charset=utf-8;' : 'text/plain;charset=utf-8;';
+			const blob = new Blob(["\uFEFF" + content], { type: mime });
+			const link = document.createElement('a');
+			link.href = URL.createObjectURL(blob);
+			link.download = `${nameBase}_${timestamp}.${ext}`;
+			link.click();
+		}
 
         function handleMessage(msg) {
             switch (msg.type) {
@@ -2015,6 +2620,12 @@
                 case 'speed_test_result':
                     updateSpeedResult(msg.data);
                     break;
+                case 'github_upload_result':
+                    setGitHubUploadStatus(`上传完成: ${msg.data.rawURL || msg.data.path || ''}`, 'success');
+                    renderRawURLCopy(msg.data.rawURL || '');
+                    log(`GitHub 上传完成: ${msg.data.rawURL || msg.data.path || ''}`);
+                    alert(`GitHub 上传完成\n${msg.data.rawURL || msg.data.path || ''}`);
+                    break;
 
                 case 'nsb_progress':
                     if (currentMode === 'nsb') {
@@ -2054,6 +2665,9 @@
                     break;
 
                 case 'error':
+                    if (String(msg.data || '').includes('上传 GitHub')) {
+                        setGitHubUploadStatus(String(msg.data), 'error');
+                    }
                     if (currentSpeedTestingIP) {
                         resetCurrentSpeedButton();
                     }

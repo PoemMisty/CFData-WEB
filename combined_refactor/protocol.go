@@ -29,6 +29,7 @@ type startSpeedTestRequest struct {
 type startNSBTaskRequest struct {
 	FileName    string `json:"fileName"`
 	FileContent string `json:"fileContent"`
+	SourceURL   string `json:"sourceURL"`
 	OutFile     string `json:"outFile"`
 	MaxThreads  int    `json:"maxThreads"`
 	SpeedTest   int    `json:"speedTest"`
@@ -36,4 +37,14 @@ type startNSBTaskRequest struct {
 	EnableTLS   bool   `json:"enableTLS"`
 	Delay       int    `json:"delay"`
 	Compact     bool   `json:"compact"`
+}
+
+type githubUploadRequest struct {
+	Token   string `json:"token"`
+	Owner   string `json:"owner"`
+	Repo    string `json:"repo"`
+	Branch  string `json:"branch"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
+	Content string `json:"content"`
 }

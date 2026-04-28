@@ -168,6 +168,9 @@ type appSession struct {
 	scanResults          []ScanResult
 	testMutex            sync.Mutex
 	testResults          []TestResult
+	nsbMutex             sync.Mutex
+	nsbHeaders           []string
+	nsbRows              [][]string
 	progressMutex        sync.Mutex
 	progressState        map[string][2]int
 	progressPrintTime    map[string]time.Time

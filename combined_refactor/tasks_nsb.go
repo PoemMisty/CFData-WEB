@@ -165,8 +165,8 @@ func sortNSBResults(results []iptestResult, speedTest int) {
 }
 
 func runNSBDownloadSpeed(ctx context.Context, ip string, port int, enableTLS bool, testURL string) (float64, string) {
-	const speedWindow = 8 * time.Second
-	const speedMaxBytes = 32 * 1024 * 1024
+	const speedWindow = 10 * time.Second
+	const speedMaxBytes = 200 * 1024 * 1024
 
 	if strings.TrimSpace(testURL) == "" {
 		testURL = speedTestURL
@@ -310,7 +310,7 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		return
 	}
 
-	ips, err := readIPs(tmpPath)
+	ips, err := readIPs(tmpPath, enableTLS)
 	if err != nil {
 		session.sendWSMessage("error", "解析上传文件失败: "+err.Error())
 		return
