@@ -673,13 +673,15 @@
             border: 1px solid var(--border-color);
             border-radius: 16px;
             box-shadow: 0 24px 80px rgba(15, 23, 42, 0.35);
-            padding: 18px;
+            padding: 22px;
         }
 
         .modal-body {
             max-height: calc(90vh - 96px);
             overflow: auto;
-            padding-right: 6px;
+            padding-right: 18px;
+            margin-right: -8px;
+            scrollbar-gutter: stable;
         }
 
         .modal-body::-webkit-scrollbar {
@@ -735,6 +737,26 @@
             font-size: 12px;
             color: var(--text-secondary);
             font-weight: 700;
+        }
+
+        .field-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .field-head-actions {
+            display: flex;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .field-head-actions .action-btn {
+            height: 28px;
+            padding: 0 10px;
+            font-size: 12px;
         }
 
         .field-picker {
@@ -930,6 +952,18 @@
                 grid-template-columns: 1fr;
             }
 
+            .result-modal {
+                width: calc(100vw - 20px);
+                max-height: 94vh;
+                padding: 18px 16px 18px 18px;
+            }
+
+            .modal-body {
+                max-height: calc(94vh - 92px);
+                padding-right: 20px;
+                margin-right: -10px;
+            }
+
             .controls,
             .container {
                 padding: 12px;
@@ -1041,7 +1075,7 @@
                     </select>
                 </div>
                 <div class="option-item">
-                    <span class="label">🎯 端口</span>
+                    <span class="label">🚪 端口</span>
                     <select id="testPort">
                         <optgroup label="HTTPS (默认)">
                             <option value="443" selected>443</option>
@@ -1115,7 +1149,7 @@
                     <input id="nsbThreads" type="number" value="100" placeholder="默认 100">
                 </div>
                 <div class="option-item">
-                    <span class="label">🎯 数据中心</span>
+                    <span class="label">🏢 数据中心</span>
                     <input id="nsbTargetDC" type="text" value="" placeholder="留空不限制，如 NRT">
                 </div>
                 <div class="option-item">
@@ -1291,7 +1325,14 @@
                         <input id="resultEndRow" type="number" value="20" min="1" oninput="updateResultPreview()">
                     </div>
                     <div class="modal-field full">
-                        <label>字段选择</label>
+                        <div class="field-head">
+                            <label>字段选择</label>
+                            <div class="field-head-actions">
+                                <button class="action-btn" id="resultSelectAllBtn" onclick="toggleAllResultFields()">全选</button>
+                                <button class="action-btn" onclick="selectIPPortOnly()">仅 IP:PORT</button>
+                                <button class="action-btn" onclick="selectDefaultResultFields()">默认选择</button>
+                            </div>
+                        </div>
                         <div class="field-picker" id="resultFieldPicker"></div>
                     </div>
                     <div class="modal-field full">
@@ -1347,8 +1388,6 @@
                     </div>
                 </div>
                 <div class="modal-actions">
-                    <button class="action-btn" onclick="selectResultFields(true)">全选</button>
-                    <button class="action-btn" onclick="selectResultFields(false)">仅 IP:PORT</button>
                     <button class="action-btn export-btn" onclick="downloadSelectedResults()">导出文件</button>
                     <button class="action-btn export-btn" onclick="uploadSelectedResultsToGitHub()">上传 GitHub</button>
                 </div>
@@ -2392,6 +2431,7 @@
             const available = RESULT_FIELDS.filter((f) => f.key === 'ipport' || rows.some((r) => String(r[f.key] ?? '').trim() !== ''));
             document.querySelectorAll('.github-field').forEach((el) => el.style.display = '');
             document.getElementById('resultFieldPicker').innerHTML = available.map((f) => `<label class="field-pill"><input type="checkbox" value="${f.key}" ${resultFieldOrder.includes(f.key) ? 'checked' : ''} onchange="toggleResultField('${f.key}', this.checked)"> ${f.label}</label>`).join('');
+            updateResultFieldQuickButtons();
             renderResultOrderList();
             updateResultPreview();
         }
@@ -2597,6 +2637,42 @@
 
         function selectResultFields(all) {
             resultFieldOrder = all ? getAllResultFieldOrder() : ['ipport'];
+            renderResultFieldOptions();
+        }
+
+        function getAvailableResultFieldKeys() {
+            const rows = getCurrentResultRows(resultModalMode);
+            return RESULT_FIELDS.filter((f) => f.key === 'ipport' || rows.some((r) => String(r[f.key] ?? '').trim() !== '')).map((f) => f.key);
+        }
+
+        function areAllResultFieldsSelected() {
+            const available = getAvailableResultFieldKeys();
+            return available.length > 0 && available.every((key) => resultFieldOrder.includes(key));
+        }
+
+        function updateResultFieldQuickButtons() {
+            const btn = document.getElementById('resultSelectAllBtn');
+            if (!btn) return;
+            btn.textContent = areAllResultFieldsSelected() ? '全部选' : '全选';
+            btn.title = areAllResultFieldsSelected() ? '恢复默认选择' : '选择全部可用字段';
+        }
+
+        function toggleAllResultFields() {
+            if (areAllResultFieldsSelected()) {
+                selectDefaultResultFields();
+                return;
+            }
+            resultFieldOrder = getAllResultFieldOrder();
+            renderResultFieldOptions();
+        }
+
+        function selectIPPortOnly() {
+            resultFieldOrder = ['ipport'];
+            renderResultFieldOptions();
+        }
+
+        function selectDefaultResultFields() {
+            resultFieldOrder = getDefaultResultFieldOrder(document.getElementById('resultFormat').value);
             renderResultFieldOptions();
         }
 
