@@ -138,7 +138,7 @@ jobs:
           tag_name: ${{ steps.get-version.outputs.VERSION }}
           name: "CFData-WEB Release ${{ steps.get-version.outputs.VERSION }}"
           body: |
-            ## v1.4.2-${{ steps.get-version.outputs.VERSION }}
+            ## ${{ steps.get-version.outputs.VERSION }}
 
 
             构建时间 / Built Time: ${{ steps.get-time.outputs.BUILD_TIME }}
