@@ -106,6 +106,21 @@ func TestRunNSBSpeedWorkersLimitsTestedCountButKeepsResults(t *testing.T) {
 	}
 }
 
+func TestFilterCLIResultRowsByIPType(t *testing.T) {
+	rows := []cliResultRow{
+		{"ip": "192.0.2.1", "ipType": "IPv4"},
+		{"ip": "2001:db8::1", "ipType": "IPv6"},
+		{"ip": "192.0.2.2", "ipType": "IPv4"},
+	}
+	got := filterCLIResultRowsByIPType(rows, "ipv6")
+	if len(got) != 1 || got[0]["ip"] != "2001:db8::1" {
+		t.Fatalf("filterCLIResultRowsByIPType ipv6 = %#v", got)
+	}
+	if gotAll := filterCLIResultRowsByIPType(rows, "all"); len(gotAll) != len(rows) {
+		t.Fatalf("filterCLIResultRowsByIPType all len = %d, want %d", len(gotAll), len(rows))
+	}
+}
+
 func TestParseNSBInputsCSVHeadersAndMultipleEndpoints(t *testing.T) {
 	input := `备注,IP地址,端口号
 主用,203.0.113.1,443

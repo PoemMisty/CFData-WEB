@@ -655,6 +655,14 @@
             padding: 0;
         }
 
+        .table-filter-select {
+            display: none;
+            width: auto;
+            height: 34px;
+            padding: 6px 30px 6px 10px;
+            font-size: 12px;
+        }
+
         .modal-mask {
             position: fixed;
             inset: 0;
@@ -1048,6 +1056,27 @@
                 max-width: 100%;
             }
 
+            .section-box h3 .table-actions {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .section-box h3 .table-actions .compact-toggle,
+            .section-box h3 .table-actions .table-filter-select {
+                grid-column: 1;
+                width: 100%;
+            }
+
+            .section-box h3 .table-actions .export-btn {
+                grid-column: 2;
+                grid-row: 1 / 3;
+                align-self: center;
+                width: auto;
+                white-space: nowrap;
+            }
+
             .controls,
             .container {
                 padding: 12px;
@@ -1331,6 +1360,11 @@
                     <span class="table-actions">
                         <label id="nsbCompactToggleWrap" class="compact-toggle"><input id="nsbCompactView"
                                 type="checkbox" checked onchange="setNSBCompactView(this.checked)"> 精简表格</label>
+                        <select id="nsbTableIPTypeFilter" class="table-filter-select" onchange="setNSBTableIPTypeFilter(this.value)">
+                            <option value="all" selected>全部展示</option>
+                            <option value="ipv4">IPV4</option>
+                            <option value="ipv6">IPV6</option>
+                        </select>
                         <button class="action-btn export-btn" onclick="openResultModal('scan')">📥 结果操作</button>
                     </span>
                 </h3>
@@ -1410,6 +1444,14 @@
                     <div class="modal-field">
                         <label>结束行</label>
                         <input id="resultEndRow" type="number" value="20" min="1" oninput="updateResultPreview()">
+                    </div>
+                    <div class="modal-field" id="resultIPTypeFilterField">
+                        <label>IP 类型筛选</label>
+                        <select id="resultIPTypeFilter" onchange="updateResultPreview()">
+                            <option value="all" selected>全部展示</option>
+                            <option value="ipv4">IPV4</option>
+                            <option value="ipv6">IPV6</option>
+                        </select>
                     </div>
                     <div class="modal-field full">
                         <div class="field-head">
@@ -1501,6 +1543,7 @@
         let nsbLiveRows = [];
         let nsbLiveIndex = {};
         let nsbCompactView = true;
+        let nsbTableIPTypeFilter = 'all';
         let currentSpeedTestingIP = '';
         let runningTaskLabel = '';
         let runningTaskMode = '';
@@ -1939,6 +1982,8 @@
         function updateNSBCompactToggle() {
             const wrap = document.getElementById('nsbCompactToggleWrap');
             if (wrap) wrap.style.display = currentMode === 'nsb' ? 'inline-flex' : 'none';
+            const filter = document.getElementById('nsbTableIPTypeFilter');
+            if (filter) filter.style.display = currentMode === 'nsb' ? 'inline-block' : 'none';
         }
 
         function setNSBCompactView(enabled) {
@@ -1949,6 +1994,16 @@
                 return;
             }
             renderScanHeaders('nsb');
+            renderAllNSBLiveRows();
+        }
+
+        function setNSBTableIPTypeFilter(value) {
+            nsbTableIPTypeFilter = normalizeIPTypeFilter(value);
+            if (currentMode !== 'nsb') return;
+            if (nsbRows.length) {
+                renderScanRowsCSV(nsbHeaders, nsbRows);
+                return;
+            }
             renderAllNSBLiveRows();
         }
 
@@ -2005,13 +2060,14 @@
             renderScanHeaders('nsb');
             const visibleHeaders = filterNSBHeaders(headers);
 
-            rows.forEach((r) => {
+            const filteredRows = filterNSBRowsByIPType(headers, rows, nsbTableIPTypeFilter);
+            filteredRows.forEach((r) => {
                 const visibleRow = filterNSBRow(headers, r);
                 const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
                 tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
             });
 
-            updateBadge('scanCount', rows.length);
+            updateBadge('scanCount', filteredRows.length);
         }
 
         const NSB_LIVE_HEADERS = ['IP地址', '端口号', 'TLS', '网络延迟', '下载速度', '出站IP', 'IP类型', '数据中心', '源IP位置', '地区', '城市', 'ASN号码', 'ASN组织', '访问协议', 'TLS版本', 'SNI', 'HTTP版本', 'WARP', 'Gateway', 'RBI', '密钥交换', '时间戳'];
@@ -2054,12 +2110,14 @@
         function renderAllNSBLiveRows() {
             const tbody = document.querySelector('#scanTable tbody');
             tbody.innerHTML = '';
-            nsbLiveRows.forEach((row) => {
+            const rows = nsbLiveRows.filter((row) => matchesIPTypeFilter(row.ipType, nsbTableIPTypeFilter));
+            rows.forEach((row) => {
                 const visibleHeaders = getVisibleNSBHeaders();
                 const visibleRow = filterNSBRow(NSB_LIVE_HEADERS, nsbRowToArray(row));
                 const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
                 tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
             });
+            updateBadge('scanCount', rows.length);
         }
 
         function addNSBLiveResult(row, render = true) {
@@ -2069,26 +2127,43 @@
             if (existingIdx !== undefined) {
                 Object.assign(nsbLiveRows[existingIdx], row);
                 if (!render) return;
-                const updated = nsbLiveRows[existingIdx];
-                const visibleHeaders = getVisibleNSBHeaders();
-                const visibleRow = filterNSBRow(NSB_LIVE_HEADERS, nsbRowToArray(updated));
-                const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
-                const tbody = document.querySelector('#scanTable tbody');
-                const tr = tbody.children[existingIdx];
-                if (tr) tr.innerHTML = tds;
+                renderAllNSBLiveRows();
                 return;
             }
 
             nsbLiveRows.push(row);
             nsbLiveIndex[key] = nsbLiveRows.length - 1;
-            updateBadge('scanCount', nsbLiveRows.length);
+            updateBadge('scanCount', nsbLiveRows.filter((item) => matchesIPTypeFilter(item.ipType, nsbTableIPTypeFilter)).length);
             if (!render) return;
+            if (!matchesIPTypeFilter(row.ipType, nsbTableIPTypeFilter)) return;
 
             const visibleHeaders = getVisibleNSBHeaders();
             const visibleRow = filterNSBRow(NSB_LIVE_HEADERS, nsbRowToArray(row));
             const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
             const tbody = document.querySelector('#scanTable tbody');
             tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
+        }
+
+        function normalizeIPTypeFilter(value) {
+            const normalized = String(value || 'all').trim().toLowerCase();
+            if (normalized === 'ipv4' || normalized === '4') return 'ipv4';
+            if (normalized === 'ipv6' || normalized === '6') return 'ipv6';
+            return 'all';
+        }
+
+        function matchesIPTypeFilter(value, filter) {
+            filter = normalizeIPTypeFilter(filter);
+            if (filter === 'all') return true;
+            return String(value || '').trim().toLowerCase() === filter;
+        }
+
+        function filterNSBRowsByIPType(headers, rows, filter) {
+            filter = normalizeIPTypeFilter(filter);
+            if (filter === 'all') return rows || [];
+            const normalized = (headers || []).map(normalizeNSBHeader);
+            const ipTypeIndex = normalized.indexOf('IP类型');
+            if (ipTypeIndex < 0) return [];
+            return (rows || []).filter((row) => matchesIPTypeFilter(row[ipTypeIndex], filter));
         }
 
         function addScanResult(row, render = true) {
@@ -2508,6 +2583,10 @@
             document.getElementById('resultModalTitle').textContent = '结果操作';
             document.getElementById('resultFormat').value = 'csv';
             document.getElementById('resultFileName').value = currentMode === 'nsb' ? 'Cloudflare_NSB_Results' : (resultModalMode === 'test' ? 'Cloudflare_SpeedTest_Results' : 'Cloudflare_Scan_Results');
+            const filterField = document.getElementById('resultIPTypeFilterField');
+            if (filterField) filterField.style.display = currentMode === 'nsb' ? '' : 'none';
+            const filterSelect = document.getElementById('resultIPTypeFilter');
+            if (filterSelect) filterSelect.value = 'all';
             resultFieldOrder = getDefaultResultFieldOrder(document.getElementById('resultFormat').value);
             renderGitHubAccounts();
             renderResultFieldOptions();
@@ -2519,9 +2598,13 @@
         }
 
         function getDefaultResultFieldOrder(format) {
+            return getDefaultResultFieldOrderFor(resultModalMode, format);
+        }
+
+        function getDefaultResultFieldOrderFor(mode, format) {
             if (format === 'txt') return ['ipport', 'dc', 'loc'];
-            if (format === 'csv') return getCompactResultFieldOrder();
-            const rows = getCurrentResultRows(resultModalMode);
+            if (format === 'csv') return getCompactResultFieldOrderFor(mode);
+            const rows = getCurrentResultRows(mode);
             if (!rows.length) return ['ipport'];
             return RESULT_FIELDS.filter((f) => rows.some((r) => String(r[f.key] ?? '').trim() !== '') && f.key !== 'ipport').map((f) => f.key);
         }
@@ -2536,12 +2619,16 @@
         }
 
         function getCompactResultFieldOrder() {
-            if (currentMode === 'nsb') return ['ip', 'port', 'tls', 'latency', 'speed', 'outboundIP', 'ipType', 'dc', 'loc', 'region', 'city', 'asnNumber', 'asnOrg'];
-            return getOfficialResultFieldOrder();
+            return getCompactResultFieldOrderFor(resultModalMode);
         }
 
-        function getOfficialResultFieldOrder() {
-            return resultModalMode === 'test'
+        function getCompactResultFieldOrderFor(mode) {
+            if (currentMode === 'nsb') return ['ip', 'port', 'tls', 'latency', 'speed', 'outboundIP', 'ipType', 'dc', 'loc', 'region', 'city', 'asnNumber', 'asnOrg'];
+            return getOfficialResultFieldOrder(mode);
+        }
+
+        function getOfficialResultFieldOrder(mode = resultModalMode) {
+            return mode === 'test'
                 ? ['ip', 'port', 'latency', 'speed', 'dc', 'region', 'city']
                 : ['ip', 'port', 'latency', 'dc', 'region', 'city'];
         }
@@ -2805,6 +2892,13 @@
             return rows.slice().sort(compareOfficialResultObjects);
         }
 
+        function getCurrentExportRows(mode) {
+            const rows = getCurrentResultRows(mode);
+            if (currentMode !== 'nsb') return rows;
+            const filter = document.getElementById('resultIPTypeFilter')?.value || 'all';
+            return rows.filter((row) => matchesIPTypeFilter(row.ipType, filter));
+        }
+
         function scanResultToObject(r) {
             return { ip: r.IP || '', port: String(r.Port ?? ''), ipport: `${r.IP || ''}:${r.Port ?? ''}`, dc: r.DataCenter || '', region: r.Region || '', city: r.City || '', latency: r.LatencyStr || '' };
         }
@@ -2847,6 +2941,11 @@
             const rows = getSelectedResultRows();
             if (!rows.length) throw new Error('暂无可操作结果');
             const fields = resultFieldOrder.length ? resultFieldOrder : getDefaultResultFieldOrder(format);
+            return buildResultContent(format, rows, fields);
+        }
+
+        function buildResultContent(format, rows, fields) {
+            if (!rows.length) throw new Error('暂无可操作结果');
             if (format === 'txt') {
                 return rows.map((r) => {
                     const ipport = r.ipport || `${r.ip || ''}:${r.port || ''}`;
@@ -2861,7 +2960,7 @@
         }
 
         function getSelectedResultRows() {
-            const rows = getCurrentResultRows(resultModalMode);
+            const rows = getCurrentExportRows(resultModalMode);
             const start = Math.max(1, parseInt(document.getElementById('resultStartRow')?.value || '1', 10) || 1);
             const end = Math.max(start, parseInt(document.getElementById('resultEndRow')?.value || '20', 10) || 20);
             return rows.slice(start - 1, end);
@@ -2984,17 +3083,13 @@
                 log('自动上传失败: 已保存账户缺少 token 或仓库配置');
                 return;
             }
-            const oldMode = resultModalMode;
-            const oldOrder = resultFieldOrder.slice();
-            resultModalMode = mode;
-            resultFieldOrder = getDefaultResultFieldOrder(format || 'txt');
+            const fields = getDefaultResultFieldOrderFor(mode, format || 'txt');
+            const content = buildResultContent(format || 'txt', getCurrentResultRows(mode), fields);
             const repoParts = account.repo.split('/');
             const path = (account.path || `results/ip.${format || 'txt'}`).replace(/\.(csv|txt)$/i, `.${format || 'txt'}`);
             const uploadKey = `${mode}:${idx}:${format || 'txt'}:${path}`;
             if (autoUploadKeys.has(uploadKey)) {
                 log(`自动上传已跳过重复提交: ${path}`);
-                resultModalMode = oldMode;
-                resultFieldOrder = oldOrder;
                 return;
             }
             autoUploadKeys.add(uploadKey);
@@ -3004,10 +3099,8 @@
                 branch: account.branch || 'main',
                 path,
                 message: account.message || 'update cfdata results',
-                content: buildSelectedResultContent(format || 'txt'),
+                content,
             };
-            resultModalMode = oldMode;
-            resultFieldOrder = oldOrder;
             wsSend({ type: 'github_upload', data: payload });
             log(`${logPrefix}: ${account.name || account.repo} ${format || 'txt'}`);
         }

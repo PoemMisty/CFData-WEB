@@ -36,6 +36,7 @@ type cliConfig struct {
 	speedMin       float64
 	enableTLS      bool
 	compactNSB     bool
+	nsbIPType      string
 	nsbDC          string
 	nsbSpeedMin    float64
 	nsbSpeedLimit  int
@@ -81,6 +82,7 @@ type cliFileConfig struct {
 	File          string  `json:"file"`
 	SourceURL     string  `json:"sourceurl"`
 	NSBDC         string  `json:"nsbdc"`
+	NSBIPType     string  `json:"nsbiptype"`
 	TLS           bool    `json:"tls"`
 	Compact       bool    `json:"compact"`
 	ResultLimit   int     `json:"resultlimit"`
@@ -184,6 +186,7 @@ var (
 	cliNSBFlags = []cliFlagInfo{
 		{name: "file", description: "非标模式输入文件路径", defaultValue: ""},
 		{name: "sourceurl", description: "非标模式网络输入 URL；与 -file 同时提供时优先使用 -file", defaultValue: ""},
+		{name: "nsbiptype", description: "非标模式最终导出 IP 类型筛选：all、ipv4 或 ipv6；只影响导出和上传内容", defaultValue: "all"},
 		{name: "speedtest", description: "非标测速线程数；表示同时测速的 IP 数量，0 表示不测速", defaultValue: "0"},
 		{name: "nsbdc", description: "非标模式指定结果数据中心；留空不限制", defaultValue: ""},
 		{name: "tls", description: "非标模式是否启用 TLS", defaultValue: "true"},
@@ -209,6 +212,7 @@ func registerCLIFlags() *cliConfig {
 	flag.StringVar(&cfg.dc, "dc", "", "官方模式指定数据中心，不填则自动选择最低延迟数据中心")
 	flag.StringVar(&cfg.file, "file", "", "非标模式输入文件路径")
 	flag.StringVar(&cfg.sourceURL, "sourceurl", "", "非标模式网络输入 URL；与 -file 同时提供时优先使用 -file")
+	flag.StringVar(&cfg.nsbIPType, "nsbiptype", "all", "非标模式最终导出 IP 类型筛选：all、ipv4 或 ipv6")
 	flag.StringVar(&cfg.nsbDC, "nsbdc", "", "非标模式指定结果数据中心")
 	flag.StringVar(&cfg.outFile, "out", "ip.csv", "CLI 输出文件名")
 	flag.IntVar(&cfg.speedLimit, "speedlimit", 0, "官方模式测速达标结果上限；0 表示关闭官方测速")
@@ -418,6 +422,7 @@ func applyCLIEnvConfig(cfg *cliConfig, provided map[string]bool) {
 	setFloat("speedmin", "CFDATA_SPEEDMIN", &cfg.speedMin)
 	setString("file", "CFDATA_FILE", &cfg.file)
 	setString("sourceurl", "CFDATA_SOURCEURL", &cfg.sourceURL)
+	setString("nsbiptype", "CFDATA_NSBIPTYPE", &cfg.nsbIPType)
 	setString("nsbdc", "CFDATA_NSBDC", &cfg.nsbDC)
 	setBool("tls", "CFDATA_TLS", &cfg.enableTLS)
 	setBool("compact", "CFDATA_COMPACT", &cfg.compactNSB)
@@ -431,7 +436,7 @@ func defaultCLIExportConfig() cliExportConfig {
 }
 
 func defaultCLIFileConfig() cliFileConfig {
-	return cliFileConfig{CLI: true, Mode: "official", IPType: 4, Threads: 100, Out: "ip.csv", SpeedTest: 0, Progress: true, NoColor: false, URL: "speed.cloudflare.com/__down?bytes=99999999", DNS: defaultDNSServers, Debug: false, CompactIPv4: false, TestPort: 443, Delay: 500, DC: "", SpeedLimit: 0, SpeedMin: 0.1, File: "", SourceURL: "", NSBDC: "", TLS: true, Compact: true, ResultLimit: 1000, NSBSpeedMin: 0.1, NSBSpeedLimit: 20, Format: "csv", Fields: "compact", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results"}
+	return cliFileConfig{CLI: true, Mode: "official", IPType: 4, Threads: 100, Out: "ip.csv", SpeedTest: 0, Progress: true, NoColor: false, URL: "speed.cloudflare.com/__down?bytes=99999999", DNS: defaultDNSServers, Debug: false, CompactIPv4: false, TestPort: 443, Delay: 500, DC: "", SpeedLimit: 0, SpeedMin: 0.1, File: "", SourceURL: "", NSBIPType: "all", NSBDC: "", TLS: true, Compact: true, ResultLimit: 1000, NSBSpeedMin: 0.1, NSBSpeedLimit: 20, Format: "csv", Fields: "compact", GitHub: false, GHBranch: "main", GHPath: "", GHMessage: "update cfdata results"}
 }
 
 func (c cliFileConfig) Export() cliExportConfig {
@@ -567,6 +572,7 @@ func buildCLIConfigHelp() []cliConfigHelp {
 		{Name: "speedmin", Description: "官方模式测速达标下限，单位 MB/s", Default: "0.1"},
 		{Name: "file", Description: "非标模式输入文件路径", Default: ""},
 		{Name: "sourceurl", Description: "非标模式网络输入 URL；与 file 同时提供时优先使用 file", Default: ""},
+		{Name: "nsbiptype", Description: "非标模式最终导出 IP 类型筛选；只影响导出和上传内容", Default: "all", Options: []string{"all", "ipv4", "ipv6"}},
 		{Name: "nsbdc", Description: "非标模式指定结果数据中心；留空不限制", Default: ""},
 		{Name: "tls", Description: "非标模式启用 TLS；缺省端口随 TLS 为 443/80", Default: "true", Options: []string{"true", "false"}},
 		{Name: "compact", Description: "非标模式本地 CSV 是否默认精简字段", Default: "true", Options: []string{"true", "false"}},
@@ -635,6 +641,7 @@ func applyCLIFileConfig(cfg *cliConfig, fileCfg cliFileConfig, provided map[stri
 	setFloat("speedmin", &cfg.speedMin, fileCfg.SpeedMin)
 	setString("file", &cfg.file, fileCfg.File)
 	setString("sourceurl", &cfg.sourceURL, fileCfg.SourceURL)
+	setString("nsbiptype", &cfg.nsbIPType, fileCfg.NSBIPType)
 	setString("nsbdc", &cfg.nsbDC, fileCfg.NSBDC)
 	if !provided["tls"] {
 		cfg.enableTLS = fileCfg.TLS
@@ -921,6 +928,10 @@ func runNSBCLI(cfg *cliConfig) error {
 	if cfg.nsbSpeedMin < 0 {
 		cfg.nsbSpeedMin = 0
 	}
+	cfg.nsbIPType = normalizeIPTypeFilter(cfg.nsbIPType)
+	if cfg.nsbIPType == "" {
+		return fmt.Errorf("-nsbiptype 仅支持 all、ipv4 或 ipv6")
+	}
 	if cfg.delay < 0 {
 		cfg.delay = 0
 	}
@@ -956,6 +967,7 @@ func runNSBCLI(cfg *cliConfig) error {
 	session.nsbMutex.Lock()
 	rows := nsbPayloadRows(session.nsbHeaders, session.nsbRows)
 	session.nsbMutex.Unlock()
+	rows = filterCLIResultRowsByIPType(rows, cfg.nsbIPType)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -1089,6 +1101,7 @@ func printCLIConfig(cfg *cliConfig) {
 	printGroup("非标模式参数", []item{
 		{"file", lookupCLIFlagDescription(cliNSBFlags, "file"), cfg.file, ""},
 		{"sourceurl", lookupCLIFlagDescription(cliNSBFlags, "sourceurl"), cfg.sourceURL, ""},
+		{"nsbiptype", lookupCLIFlagDescription(cliNSBFlags, "nsbiptype"), cfg.nsbIPType, "all"},
 		{"speedtest", lookupCLIFlagDescription(cliNSBFlags, "speedtest"), strconv.Itoa(cfg.speedTest), "0"},
 		{"nsbdc", lookupCLIFlagDescription(cliNSBFlags, "nsbdc"), cfg.nsbDC, ""},
 		{"tls", lookupCLIFlagDescription(cliNSBFlags, "tls"), strconv.FormatBool(cfg.enableTLS), "true"},
@@ -1592,6 +1605,33 @@ func nsbPayloadRows(headers []string, rows [][]string) []cliResultRow {
 		result = append(result, item)
 	}
 	return result
+}
+
+func filterCLIResultRowsByIPType(rows []cliResultRow, filter string) []cliResultRow {
+	filter = normalizeIPTypeFilter(filter)
+	if filter == "all" {
+		return rows
+	}
+	filtered := make([]cliResultRow, 0, len(rows))
+	for _, row := range rows {
+		if strings.EqualFold(strings.TrimSpace(row["ipType"]), filter) {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+func normalizeIPTypeFilter(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "all", "全部", "全部展示":
+		return "all"
+	case "4", "ipv4":
+		return "ipv4"
+	case "6", "ipv6":
+		return "ipv6"
+	default:
+		return ""
+	}
 }
 
 func cliFieldKeyFromHeader(header string) string {
