@@ -22,16 +22,26 @@ Thumbs.db
 
 # Build and runtime cache artifacts
 release_assets/
+cfdata
+cfdata-*
+combined_refactor/cfdata
+combined_refactor/cfdata-*
 cfdata-config.json
 ips-v4.txt
 ips-v6.txt
 locations.json
 GeoLite2-ASN.mmdb
+ip.csv
+ip.txt
+*_failures.csv
 combined_refactor/cfdata-config.json
 combined_refactor/ips-v4.txt
 combined_refactor/ips-v6.txt
 combined_refactor/locations.json
 combined_refactor/*.mmdb
+combined_refactor/ip.csv
+combined_refactor/ip.txt
+combined_refactor/*_failures.csv
 
 # Windows alternate data stream artifacts copied into archives
 *.Zone.Identifier

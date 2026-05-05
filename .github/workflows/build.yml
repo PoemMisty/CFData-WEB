@@ -83,7 +83,7 @@ jobs:
           filename="cfdata-${{ matrix.goos }}-${{ matrix.goarch }}${ext}"
           echo "Building ${filename}..."
           cd combined_refactor
-          go build -ldflags "-s -w" -o ../release_assets/${filename} .
+          go build -ldflags "-s -w -X main.appVersion=${{ steps.set-version.outputs.VERSION }}" -o ../release_assets/${filename} .
         env:
           GOARCH: ${{ matrix.goarch }}
           GOOS: ${{ matrix.goos }}

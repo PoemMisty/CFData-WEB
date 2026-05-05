@@ -158,10 +158,16 @@ func scanNSBEntry(ctx context.Context, item string, enableTLS bool, delay int, t
 func sortNSBResults(results []iptestResult, speedTest int) {
 	if speedTest > 0 {
 		sort.Slice(results, func(i, j int) bool {
+			if results[i].speedQualified != results[j].speedQualified {
+				return results[i].speedQualified
+			}
 			if results[i].speedTested != results[j].speedTested {
 				return results[i].speedTested
 			}
-			return results[i].downloadSpeed > results[j].downloadSpeed
+			if results[i].speedQualified && results[i].downloadSpeed != results[j].downloadSpeed {
+				return results[i].downloadSpeed > results[j].downloadSpeed
+			}
+			return results[i].tcpDuration < results[j].tcpDuration
 		})
 		return
 	}
@@ -481,6 +487,11 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		return
 	}
 
+	sortNSBResults(nsbResults, 0)
+
+	completionStatus := "complete"
+	completionMessage := "测试完成"
+	qualifiedCount := 0
 	if speedTest > 0 && speedLimit > 0 {
 		session.sendWSMessage("log", fmt.Sprintf("开始测速：%d 条记录，线程数=%d", len(nsbResults), speedTest))
 
@@ -510,25 +521,23 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		if speedCanceled {
 			wasCanceled = true
 		}
-		qualifiedCount := 0
 		for i := range nsbResults {
 			if nsbResults[i].speedTested && nsbResults[i].speedText == "" {
 				nsbResults[i].speedText = fmt.Sprintf("%.2fMB/s", nsbResults[i].downloadSpeed/1024)
 			}
-			if !nsbResults[i].speedTested && nsbResults[i].speedText == "" {
-				nsbResults[i].speedText = "未测速"
-			}
 			if nsbResults[i].speedTested && nsbResults[i].downloadSpeed/1024 >= speedMin {
+				nsbResults[i].speedQualified = true
 				qualifiedCount++
 			}
 		}
 		sortNSBResults(nsbResults, speedTest)
 		if qualifiedCount == 0 {
-			session.sendWSMessage("error", fmt.Sprintf("没有满足测速阈值 %.2fMB/s 的结果", speedMin))
-			return
+			completionStatus = "failed"
+			completionMessage = "未找到符合要求的结果"
+		} else if speedLimit > 0 && qualifiedCount < speedLimit {
+			completionStatus = "partial"
+			completionMessage = "测试完成，未能完成任务需求结果"
 		}
-	} else {
-		sortNSBResults(nsbResults, 0)
 	}
 
 	if wasCanceled || ctx.Err() != nil {
@@ -548,18 +557,18 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		return
 	}
 
-	session.sendWSMessage("nsb_csv_complete", csvHeaderPayload{Headers: headers, Rows: rows, File: outFile})
+	session.sendWSMessage("nsb_csv_complete", nsbCSVCompletePayload{Headers: headers, Rows: rows, File: outFile, Status: completionStatus, Message: completionMessage, QualifiedCount: qualifiedCount})
 	session.sendWSMessage("log", fmt.Sprintf("非标优选完成，结果文件: %s", outFile))
 }
 
-func runNSBSpeedWorkers(ctx context.Context, results []iptestResult, maxWorkers, speedLimit int, speedMin float64, onProgress func(current int), onResult func(idx int, speedErr string), work func(idx int) (float64, string)) bool {
+func runNSBSpeedWorkers(ctx context.Context, results []iptestResult, maxWorkers, targetQualified int, speedMin float64, onProgress func(current int), onResult func(idx int, speedErr string), work func(idx int) (float64, string)) bool {
 	if len(results) == 0 {
 		return false
 	}
 	if maxWorkers <= 0 {
 		maxWorkers = 1
 	}
-	if speedLimit <= 0 {
+	if targetQualified <= 0 {
 		return false
 	}
 
@@ -580,6 +589,7 @@ func runNSBSpeedWorkers(ctx context.Context, results []iptestResult, maxWorkers,
 				results[idx].speedText = speedErr
 			} else {
 				results[idx].speedText = fmt.Sprintf("%.2fMB/s", speed/1024)
+				results[idx].speedQualified = speed/1024 >= speedMin
 			}
 			done <- speedDone{idx: idx, err: speedErr}
 		}
@@ -597,7 +607,7 @@ func runNSBSpeedWorkers(ctx context.Context, results []iptestResult, maxWorkers,
 	qualified := 0
 	wasCanceled := false
 	shouldSend := func() bool {
-		return next < len(results) && next < speedLimit
+		return next < len(results) && qualified+inFlight < targetQualified
 	}
 
 	for shouldSend() || inFlight > 0 {
@@ -612,7 +622,7 @@ func runNSBSpeedWorkers(ctx context.Context, results []iptestResult, maxWorkers,
 		case item := <-done:
 			inFlight--
 			completed++
-			if results[item.idx].speedTested && item.err == "" && results[item.idx].downloadSpeed/1024 >= speedMin {
+			if results[item.idx].speedQualified {
 				qualified++
 			}
 			if onResult != nil {

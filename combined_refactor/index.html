@@ -205,6 +205,20 @@
             font-size: 1.75rem;
         }
 
+        .version-line {
+            margin: -8px 96px 16px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+
+        .version-line a {
+            color: var(--warning-color);
+            font-weight: 700;
+            text-decoration: none;
+            margin-left: 8px;
+        }
+
         .status-bar {
             margin-bottom: 16px;
             padding: 12px 16px;
@@ -639,6 +653,7 @@
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         .compact-toggle {
@@ -661,6 +676,12 @@
             height: 34px;
             padding: 6px 30px 6px 10px;
             font-size: 12px;
+        }
+
+        .speed-unqualified {
+            text-decoration: line-through;
+            text-decoration-thickness: 2px;
+            text-decoration-color: currentColor;
         }
 
         .modal-mask {
@@ -1063,15 +1084,29 @@
                 gap: 8px;
             }
 
-            .section-box h3 .table-actions .compact-toggle,
-            .section-box h3 .table-actions .table-filter-select {
+            .section-box h3 .table-actions .compact-toggle {
                 grid-column: 1;
+                grid-row: 1;
                 width: 100%;
+            }
+
+            .section-box h3 .table-actions .table-filter-select {
+                width: 100%;
+            }
+
+            #nsbTableIPTypeFilter {
+                grid-column: 1;
+                grid-row: 2;
+            }
+
+            #nsbTableQualifiedFilter {
+                grid-column: 2;
+                grid-row: 2;
             }
 
             .section-box h3 .table-actions .export-btn {
                 grid-column: 2;
-                grid-row: 1 / 3;
+                grid-row: 1;
                 align-self: center;
                 width: auto;
                 white-space: nowrap;
@@ -1142,8 +1177,9 @@
 </head>
 
 <body>
-    <div class="container">
+        <div class="container">
         <h1>Cloudflare IP Data</h1>
+        <div class="version-line" id="versionLine">dev</div>
         <div class="top-actions">
             <a class="github-link" href="https://github.com/PoemMisty/CFData-WEB" target="_blank"
                 rel="noopener noreferrer" title="打开 GitHub 仓库" aria-label="打开 GitHub 仓库">
@@ -1361,9 +1397,14 @@
                         <label id="nsbCompactToggleWrap" class="compact-toggle"><input id="nsbCompactView"
                                 type="checkbox" checked onchange="setNSBCompactView(this.checked)"> 精简表格</label>
                         <select id="nsbTableIPTypeFilter" class="table-filter-select" onchange="setNSBTableIPTypeFilter(this.value)">
-                            <option value="all" selected>全部展示</option>
-                            <option value="ipv4">IPV4</option>
-                            <option value="ipv6">IPV6</option>
+                            <option value="all" selected>展示全部类型</option>
+                            <option value="ipv4">仅展示IPV4</option>
+                            <option value="ipv6">仅展示IPV6</option>
+                        </select>
+                        <select id="nsbTableQualifiedFilter" class="table-filter-select" onchange="setNSBTableQualifiedFilter(this.value)">
+                            <option value="all" selected>展示全部结果</option>
+                            <option value="qualified">仅展示合格</option>
+                            <option value="unqualified">仅展示不合格</option>
                         </select>
                         <button class="action-btn export-btn" onclick="openResultModal('scan')">📥 结果操作</button>
                     </span>
@@ -1448,9 +1489,17 @@
                     <div class="modal-field" id="resultIPTypeFilterField">
                         <label>IP 类型筛选</label>
                         <select id="resultIPTypeFilter" onchange="updateResultPreview()">
-                            <option value="all" selected>全部展示</option>
-                            <option value="ipv4">IPV4</option>
-                            <option value="ipv6">IPV6</option>
+                            <option value="all" selected>导出全部类型</option>
+                            <option value="ipv4">仅导出IPV4</option>
+                            <option value="ipv6">仅导出IPV6</option>
+                        </select>
+                    </div>
+                    <div class="modal-field" id="resultQualifiedFilterField">
+                        <label>导出合格结果</label>
+                        <select id="resultQualifiedFilter" onchange="updateResultPreview()">
+                            <option value="all">导出全部结果</option>
+                            <option value="qualified" selected>仅导出合格</option>
+                            <option value="unqualified">仅导出不合格</option>
                         </select>
                     </div>
                     <div class="modal-field full">
@@ -1544,6 +1593,9 @@
         let nsbLiveIndex = {};
         let nsbCompactView = true;
         let nsbTableIPTypeFilter = 'all';
+        let nsbTableQualifiedFilter = 'all';
+        let nsbSpeedMinValue = 0;
+        let nsbSpeedEnabledForResults = false;
         let currentSpeedTestingIP = '';
         let runningTaskLabel = '';
         let runningTaskMode = '';
@@ -1984,6 +2036,8 @@
             if (wrap) wrap.style.display = currentMode === 'nsb' ? 'inline-flex' : 'none';
             const filter = document.getElementById('nsbTableIPTypeFilter');
             if (filter) filter.style.display = currentMode === 'nsb' ? 'inline-block' : 'none';
+            const qualifiedFilter = document.getElementById('nsbTableQualifiedFilter');
+            if (qualifiedFilter) qualifiedFilter.style.display = currentMode === 'nsb' ? 'inline-block' : 'none';
         }
 
         function setNSBCompactView(enabled) {
@@ -1999,6 +2053,16 @@
 
         function setNSBTableIPTypeFilter(value) {
             nsbTableIPTypeFilter = normalizeIPTypeFilter(value);
+            if (currentMode !== 'nsb') return;
+            if (nsbRows.length) {
+                renderScanRowsCSV(nsbHeaders, nsbRows);
+                return;
+            }
+            renderAllNSBLiveRows();
+        }
+
+        function setNSBTableQualifiedFilter(value) {
+            nsbTableQualifiedFilter = normalizeQualifiedFilter(value);
             if (currentMode !== 'nsb') return;
             if (nsbRows.length) {
                 renderScanRowsCSV(nsbHeaders, nsbRows);
@@ -2033,6 +2097,7 @@
             let portIndex = headers.indexOf('端口号');
             let latencyIndex = headers.indexOf('网络延迟');
             let speedIndex = headers.indexOf('下载速度');
+            const speedQualified = speedIndex < 0 || isNSBSpeedQualified(r[speedIndex]);
             return headers.map((_, idx) => {
                 const val = escapeHTML(r[idx] ?? '');
                 const rawVal = String(r[idx] ?? '');
@@ -2047,7 +2112,8 @@
                 } else if (idx === speedIndex && speedIndex !== -1) {
                     const speedVal = parseFloat(rawVal);
                     const color = speedVal > SPEED_GREEN ? '#10b981' : (speedVal > 0 ? '#f59e0b' : '#ef4444');
-                    return `<td style="color:${color}; font-weight:600;">${val}</td>`;
+                    const cls = speedQualified ? '' : ' class="speed-unqualified"';
+                    return `<td${cls} style="color:${color}; font-weight:600;">${val}</td>`;
                 } else {
                     return `<td>${val}</td>`;
                 }
@@ -2060,7 +2126,7 @@
             renderScanHeaders('nsb');
             const visibleHeaders = filterNSBHeaders(headers);
 
-            const filteredRows = filterNSBRowsByIPType(headers, rows, nsbTableIPTypeFilter);
+            const filteredRows = filterNSBRowsByQualified(filterNSBRowsByIPType(headers, rows, nsbTableIPTypeFilter), headers, nsbTableQualifiedFilter);
             filteredRows.forEach((r) => {
                 const visibleRow = filterNSBRow(headers, r);
                 const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
@@ -2110,7 +2176,8 @@
         function renderAllNSBLiveRows() {
             const tbody = document.querySelector('#scanTable tbody');
             tbody.innerHTML = '';
-            const rows = nsbLiveRows.filter((row) => matchesIPTypeFilter(row.ipType, nsbTableIPTypeFilter));
+            sortNSBLiveRowsByLatency();
+            const rows = nsbLiveRows.filter((row) => matchesIPTypeFilter(row.ipType, nsbTableIPTypeFilter) && matchesQualifiedFilter(row, nsbTableQualifiedFilter));
             rows.forEach((row) => {
                 const visibleHeaders = getVisibleNSBHeaders();
                 const visibleRow = filterNSBRow(NSB_LIVE_HEADERS, nsbRowToArray(row));
@@ -2132,16 +2199,25 @@
             }
 
             nsbLiveRows.push(row);
-            nsbLiveIndex[key] = nsbLiveRows.length - 1;
-            updateBadge('scanCount', nsbLiveRows.filter((item) => matchesIPTypeFilter(item.ipType, nsbTableIPTypeFilter)).length);
+            sortNSBLiveRowsByLatency();
+            updateBadge('scanCount', nsbLiveRows.filter((item) => matchesIPTypeFilter(item.ipType, nsbTableIPTypeFilter) && matchesQualifiedFilter(item, nsbTableQualifiedFilter)).length);
             if (!render) return;
             if (!matchesIPTypeFilter(row.ipType, nsbTableIPTypeFilter)) return;
+            if (!matchesQualifiedFilter(row, nsbTableQualifiedFilter)) return;
+            renderAllNSBLiveRows();
+        }
 
-            const visibleHeaders = getVisibleNSBHeaders();
-            const visibleRow = filterNSBRow(NSB_LIVE_HEADERS, nsbRowToArray(row));
-            const tds = renderNSBRowFromCSV(visibleHeaders, visibleRow);
-            const tbody = document.querySelector('#scanTable tbody');
-            tbody.insertAdjacentHTML('beforeend', `<tr>${tds}</tr>`);
+        function sortNSBLiveRowsByLatency() {
+            nsbLiveRows.sort((a, b) => parseLatencyForSort(a.latency) - parseLatencyForSort(b.latency));
+            nsbLiveIndex = {};
+            nsbLiveRows.forEach((row, idx) => {
+                nsbLiveIndex[(row.ip || '') + ':' + (row.port || '')] = idx;
+            });
+        }
+
+        function parseLatencyForSort(value) {
+            const latency = parseFloat(String(value || '').replace(/ms/i, '').trim());
+            return Number.isFinite(latency) ? latency : Number.MAX_SAFE_INTEGER;
         }
 
         function normalizeIPTypeFilter(value) {
@@ -2164,6 +2240,37 @@
             const ipTypeIndex = normalized.indexOf('IP类型');
             if (ipTypeIndex < 0) return [];
             return (rows || []).filter((row) => matchesIPTypeFilter(row[ipTypeIndex], filter));
+        }
+
+        function normalizeQualifiedFilter(value) {
+            const normalized = String(value || 'all').trim().toLowerCase();
+            if (normalized === 'qualified' || normalized === '合格') return 'qualified';
+            if (normalized === 'unqualified' || normalized === '不合格') return 'unqualified';
+            return 'all';
+        }
+
+        function isNSBSpeedQualified(value) {
+            const speed = parseSpeedMB(value);
+            return speed >= 0 && speed >= nsbSpeedMinValue;
+        }
+
+        function matchesQualifiedFilter(row, filter) {
+            filter = normalizeQualifiedFilter(filter);
+            if (filter === 'all') return true;
+            const qualified = isNSBSpeedQualified(row.speed);
+            return filter === 'qualified' ? qualified : !qualified;
+        }
+
+        function filterNSBRowsByQualified(rows, headers, filter) {
+            filter = normalizeQualifiedFilter(filter);
+            if (filter === 'all') return rows || [];
+            const normalized = (headers || []).map(normalizeNSBHeader);
+            const speedIndex = normalized.indexOf('下载速度');
+            if (speedIndex < 0) return filter === 'unqualified' ? (rows || []) : [];
+            return (rows || []).filter((row) => {
+                const qualified = isNSBSpeedQualified(row[speedIndex]);
+                return filter === 'qualified' ? qualified : !qualified;
+            });
         }
 
         function addScanResult(row, render = true) {
@@ -2481,6 +2588,7 @@
             const speedURL = document.getElementById('nsbSpeedUrl').value.trim() || defaultSpeedTestUrl;
             const outFile = document.getElementById('nsbOutFile').value.trim() || 'ip.csv';
             const speedTest = speedEnabled ? speedTestInput : 0;
+            nsbSpeedEnabledForResults = speedTest > 0 && (parseInt(document.getElementById('nsbSpeedLimit').value) || 0) > 0;
             const tlsMode = String(document.getElementById('nsbTls').value || 'on').toLowerCase();
             const enableTLS = tlsMode !== 'off';
             const delay = parseInt(document.getElementById('nsbDelay').value) || 0;
@@ -2488,6 +2596,7 @@
             const targetDC = document.getElementById('nsbTargetDC').value.trim();
             const speedMin = parseFloat(document.getElementById('nsbSpeedMin').value) || 0;
             const speedLimit = parseInt(document.getElementById('nsbSpeedLimit').value) || 0;
+            nsbSpeedMinValue = speedMin;
             nsbCompactView = !!document.getElementById('nsbCompactView')?.checked;
 
             if (isNaN(speedTestInput) || speedTestInput < 0) {
@@ -2587,6 +2696,10 @@
             if (filterField) filterField.style.display = currentMode === 'nsb' ? '' : 'none';
             const filterSelect = document.getElementById('resultIPTypeFilter');
             if (filterSelect) filterSelect.value = 'all';
+            const qualifiedField = document.getElementById('resultQualifiedFilterField');
+            if (qualifiedField) qualifiedField.style.display = currentMode === 'nsb' ? '' : 'none';
+            const qualifiedSelect = document.getElementById('resultQualifiedFilter');
+            if (qualifiedSelect) qualifiedSelect.value = currentMode === 'nsb' && nsbSpeedEnabledForResults ? 'qualified' : 'all';
             resultFieldOrder = getDefaultResultFieldOrder(document.getElementById('resultFormat').value);
             renderGitHubAccounts();
             renderResultFieldOptions();
@@ -2896,7 +3009,8 @@
             const rows = getCurrentResultRows(mode);
             if (currentMode !== 'nsb') return rows;
             const filter = document.getElementById('resultIPTypeFilter')?.value || 'all';
-            return rows.filter((row) => matchesIPTypeFilter(row.ipType, filter));
+            const qualified = document.getElementById('resultQualifiedFilter')?.value || (nsbSpeedEnabledForResults ? 'qualified' : 'all');
+            return rows.filter((row) => matchesIPTypeFilter(row.ipType, filter) && matchesQualifiedFilter(row, qualified));
         }
 
         function scanResultToObject(r) {
@@ -3029,7 +3143,13 @@
 
         function downloadSelectedResults() {
             const format = document.getElementById('resultFormat').value;
-            const content = buildSelectedResultContent(format);
+            let content;
+            try {
+                content = buildSelectedResultContent(format);
+            } catch (err) {
+                alert(err.message || '暂无可操作结果');
+                return;
+            }
             const name = document.getElementById('resultFileName').value.trim() || 'cfdata-results';
             downloadFile(content, name, format);
         }
@@ -3037,7 +3157,13 @@
         async function uploadSelectedResultsToGitHub() {
             const format = document.getElementById('resultFormat').value;
             const quickFile = await readQuickUploadFile();
-            const content = quickFile ? quickFile.content : buildSelectedResultContent(format);
+            let content;
+            try {
+                content = quickFile ? quickFile.content : buildSelectedResultContent(format);
+            } catch (err) {
+                alert(err.message || '暂无可操作结果');
+                return;
+            }
             const repoParts = document.getElementById('githubRepo').value.trim().split('/');
             if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) return alert('仓库格式应为 owner/repo');
             const payload = {
@@ -3084,7 +3210,15 @@
                 return;
             }
             const fields = getDefaultResultFieldOrderFor(mode, format || 'txt');
-            const content = buildResultContent(format || 'txt', getCurrentResultRows(mode), fields);
+            let rows = getCurrentResultRows(mode);
+            if (currentMode === 'nsb' && nsbSpeedEnabledForResults) {
+                rows = rows.filter((row) => matchesQualifiedFilter(row, 'qualified'));
+            }
+            if (!rows.length) {
+                log('自动上传跳过: 没有合格结果');
+                return;
+            }
+            const content = buildResultContent(format || 'txt', rows, fields);
             const repoParts = account.repo.split('/');
             const path = (account.path || `results/ip.${format || 'txt'}`).replace(/\.(csv|txt)$/i, `.${format || 'txt'}`);
             const uploadKey = `${mode}:${idx}:${format || 'txt'}:${path}`;
@@ -3121,6 +3255,10 @@
                     defaultSpeedTestUrl = msg.data.speedTestURL || defaultSpeedTestUrl;
                     document.getElementById('speedTestUrl').value = defaultSpeedTestUrl;
                     document.getElementById('nsbSpeedUrl').value = defaultSpeedTestUrl;
+                    renderVersionInfo(msg.data || {});
+                    break;
+                case 'version_info':
+                    renderVersionInfo(msg.data || {});
                     break;
                 case 'scan_progress':
                     updateProgress(msg.data.current || 0, msg.data.total || 0, '扫描中');
@@ -3182,13 +3320,23 @@
                     nsbRows = msg.data.rows || [];
                     nsbLiveRows = [];
                     nsbLiveIndex = {}; renderScanRowsCSV(nsbHeaders, nsbRows);
-                    updateProgress(nsbRows.length, Math.max(nsbRows.length, 1), '完成');
-                    progressBar.style.background = 'linear-gradient(to right, #10b981, #34d399)';
+                    const nsbStatus = msg.data.status || 'complete';
+                    const nsbMessage = msg.data.message || '测试完成';
+                    updateProgress(nsbRows.length, Math.max(nsbRows.length, 1), nsbStatus === 'failed' ? '任务失败' : '完成');
+                    progressBar.style.background = nsbStatus === 'failed' ? 'var(--error-color)' : (nsbStatus === 'partial' ? 'var(--warning-color)' : 'linear-gradient(to right, #10b981, #34d399)');
                     // 修改点4：修复非标模式完成后进度条绿色闪烁问题
                     // 原因：虽然背景已改为绿色，但 animation: stripe 1s linear infinite 仍在生效，导致条纹持续闪烁、前进、消失重复
                     // 方案：立即停止动画（animation: none），其他代码完全不变
                     progressBar.style.animation = 'none';
-                    log(`非标优选完成，已生成: ${msg.data.file}`);
+                    if (nsbStatus === 'failed') {
+                        progressBar.textContent = '任务失败';
+                        log(`任务失败: 测试${nsbMessage}`);
+                    } else if (nsbStatus === 'partial') {
+                        progressBar.textContent = '任务结束';
+                        log(`任务结束: ${nsbMessage}`);
+                    } else {
+                        log(`非标优选完成，已生成: ${msg.data.file}`);
+                    }
                     autoUploadNSBResults();
                     break;
 
@@ -3261,6 +3409,19 @@
                     updateProgress(100, 100, '完成');
                     break;
             }
+        }
+
+        function renderVersionInfo(data) {
+            const el = document.getElementById('versionLine');
+            if (!el) return;
+            const version = data.version || 'dev';
+            const latest = data.latest || '';
+            const releaseURL = data.releaseURL || 'https://github.com/PoemMisty/CFData-WEB/releases/latest';
+            let html = escapeHTML(version);
+            if (data.hasUpdate && latest) {
+                html += ` <a href="${releaseURL}" target="_blank" rel="noopener noreferrer">发现新版本 ${escapeHTML(latest)}</a>`;
+            }
+            el.innerHTML = html;
         }
 
         function handleResetConfigResult(data) {

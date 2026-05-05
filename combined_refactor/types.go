@@ -98,6 +98,7 @@ type iptestResult struct {
 	downloadSpeed float64
 	speedText     string
 	speedTested   bool
+	speedQualified bool
 }
 
 type nsbScanMessage struct {
@@ -110,6 +111,7 @@ type nsbScanMessage struct {
 	City        string `json:"city"`
 	Latency     string `json:"latency"`
 	Speed       string `json:"speed"`
+	SpeedQualified bool `json:"speedQualified"`
 	OutboundIP  string `json:"outboundIP"`
 	IPType      string `json:"ipType"`
 	ASNNumber   string `json:"asnNumber"`
@@ -125,6 +127,15 @@ type nsbScanMessage struct {
 	Timestamp   string `json:"timestamp"`
 }
 
+type nsbCSVCompletePayload struct {
+	Headers []string   `json:"headers"`
+	Rows    [][]string `json:"rows"`
+	File    string     `json:"file"`
+	Status  string     `json:"status"`
+	Message string     `json:"message"`
+	QualifiedCount int  `json:"qualifiedCount"`
+}
+
 func (r *iptestResult) toNSBMessage(speedStr string) nsbScanMessage {
 	return nsbScanMessage{
 		IP:          r.ipAddr,
@@ -136,6 +147,7 @@ func (r *iptestResult) toNSBMessage(speedStr string) nsbScanMessage {
 		City:        r.city,
 		Latency:     r.latency,
 		Speed:       speedStr,
+		SpeedQualified: r.speedQualified,
 		OutboundIP:  r.outboundIP,
 		IPType:      r.ipType,
 		ASNNumber:   r.asnNumber,

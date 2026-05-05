@@ -87,19 +87,29 @@ func TestOfficialResultRowsSortsLikeNSB(t *testing.T) {
 	}
 }
 
-func TestRunNSBSpeedWorkersLimitsTestedCountButKeepsResults(t *testing.T) {
+func TestRunNSBSpeedWorkersContinuesUntilQualifiedTarget(t *testing.T) {
 	results := []iptestResult{{ipAddr: "1"}, {ipAddr: "2"}, {ipAddr: "3"}, {ipAddr: "4"}}
-	runNSBSpeedWorkers(context.Background(), results, 2, 2, 0.1, nil, nil, func(idx int) (float64, string) {
-		return 10 * 1024, ""
+	runNSBSpeedWorkers(context.Background(), results, 2, 2, 5, nil, nil, func(idx int) (float64, string) {
+		if idx < 2 {
+			return 4 * 1024, ""
+		}
+		return 6 * 1024, ""
 	})
 	tested := 0
+	qualified := 0
 	for _, res := range results {
 		if res.speedTested {
 			tested++
 		}
+		if res.speedQualified {
+			qualified++
+		}
 	}
-	if tested != 2 {
-		t.Fatalf("speed tested count = %d, want 2", tested)
+	if tested != 4 {
+		t.Fatalf("speed tested count = %d, want 4", tested)
+	}
+	if qualified != 2 {
+		t.Fatalf("qualified count = %d, want 2", qualified)
 	}
 	if len(results) != 4 {
 		t.Fatalf("results len = %d, want 4", len(results))
@@ -118,6 +128,21 @@ func TestFilterCLIResultRowsByIPType(t *testing.T) {
 	}
 	if gotAll := filterCLIResultRowsByIPType(rows, "all"); len(gotAll) != len(rows) {
 		t.Fatalf("filterCLIResultRowsByIPType all len = %d, want %d", len(gotAll), len(rows))
+	}
+}
+
+func TestFilterCLIResultRowsByQualification(t *testing.T) {
+	rows := []cliResultRow{
+		{"ip": "192.0.2.1", "speed": "6.00MB/s"},
+		{"ip": "192.0.2.2", "speed": "4.99MB/s"},
+		{"ip": "192.0.2.3", "speed": "未测速"},
+	}
+	got := filterCLIResultRowsByQualification(rows, true, true, 5)
+	if len(got) != 1 || got[0]["ip"] != "192.0.2.1" {
+		t.Fatalf("filterCLIResultRowsByQualification = %#v", got)
+	}
+	if gotAll := filterCLIResultRowsByQualification(rows, true, false, 5); len(gotAll) != len(rows) {
+		t.Fatalf("filterCLIResultRowsByQualification no speed len = %d, want %d", len(gotAll), len(rows))
 	}
 }
 
