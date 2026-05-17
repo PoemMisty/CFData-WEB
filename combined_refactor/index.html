@@ -1827,7 +1827,7 @@
             <div class="proxy-warning-card">
                 <h3 class="proxy-warning-title">🚨 代理检测警告</h3>
                 <div class="proxy-warning-country">读取到的网络标签：<span id="proxyWarningCountry">未知</span></div>
-                <p>检测到您当前很可能处于代理/VPN环境中！</p>
+                <p id="proxyWarningIntro">检测到您当前很可能处于代理/VPN环境中！</p>
                 <p>在代理状态下进行的IP优选测试结果将不准确，可能导致：</p>
                 <ul>
                     <li>延迟数据失真，无法反映真实网络状况</li>
@@ -1886,6 +1886,7 @@
         let stopWatchdogTimer = null;
         let cfCountry = 'CN';
         let proxyWarningRequired = false;
+        let proxyGeoCheckOK = true;
         let proxyWarningBypassed = false;
         let proxyWarningPendingAction = null;
         let proxyWarningCountdownTimer = null;
@@ -2253,6 +2254,7 @@
         function handleProxyCountryResult(data) {
             cfCountry = String(data?.cfCountry || 'CN').toUpperCase();
             proxyWarningRequired = !!data?.proxyWarning;
+            proxyGeoCheckOK = data?.geoCheckOK !== false;
             proxyCountryCheckPending = false;
             if (proxyCountryCheckTimer) {
                 window.clearTimeout(proxyCountryCheckTimer);
@@ -2280,8 +2282,10 @@
             const mask = document.getElementById('proxyWarningMask');
             const btn = document.getElementById('proxyWarningContinueBtn');
             const countryEl = document.getElementById('proxyWarningCountry');
+            const introEl = document.getElementById('proxyWarningIntro');
             if (!mask || !btn) return;
             if (countryEl) countryEl.textContent = cfCountry || '未知';
+            if (introEl) introEl.textContent = proxyGeoCheckOK ? '检测到您当前很可能处于代理/VPN环境中！' : '地区验证失败，无法确认当前是否处于代理/VPN环境中！';
             mask.classList.add('active');
             let remaining = 5;
             btn.disabled = true;
@@ -4094,6 +4098,7 @@
                     webDebugMode = !!msg.data.debug;
                     cfCountry = String(msg.data.cfCountry || 'CN').toUpperCase();
                     proxyWarningRequired = !!msg.data.proxyWarning;
+                    proxyGeoCheckOK = msg.data.geoCheckOK !== false;
                     proxyWarningBypassed = false;
                     if (webDebugMode) log('调试模式已开启，错误将输出到程序 log');
                     if (proxyWarningRequired) log(`代理检测警告：当前网络标签 ${cfCountry}`);
@@ -4139,7 +4144,11 @@
                     addTestResult(msg.data, currentMode === 'official' && document.getElementById('test').classList.contains('active'));
                     break;
                 case 'test_complete':
-                    if (isStoppingTask) break;
+                    if (isStoppingTask) {
+                        resetStoppedTaskUI('已手动终止');
+                        log('任务已手动终止');
+                        break;
+                    }
                     if (currentMode === 'official') {
                         testData = msg.data;
                         renderAllTestResults();
@@ -4165,7 +4174,11 @@
                     }
                     break;
                 case 'official_speed_complete':
-                    if (isStoppingTask) break;
+                    if (isStoppingTask) {
+                        resetStoppedTaskUI('已手动终止');
+                        log('任务已手动终止');
+                        break;
+                    }
                     officialAutoSpeedPending = false;
                     officialAutoStage = '';
                     officialBatchSpeedRunning = false;
@@ -4228,7 +4241,11 @@
                     addNSBLiveResult(msg.data || {}, currentMode === 'nsb');
                     break;
                 case 'nsb_csv_complete':
-                    if (isStoppingTask) break;
+                    if (isStoppingTask) {
+                        resetStoppedTaskUI('已手动终止');
+                        log('任务已手动终止');
+                        break;
+                    }
                     finishRunningTask('✨ 开始扫描与测试');
                     nsbHeaders = msg.data.headers || [];
                     nsbRows = msg.data.rows || [];
@@ -4333,7 +4350,11 @@
                     }
                     break;
                 case 'compact_ipv4_done':
-                    if (isStoppingTask) break;
+                    if (isStoppingTask) {
+                        resetStoppedTaskUI('已手动终止');
+                        log('任务已手动终止');
+                        break;
+                    }
                     flushCompactHits();
                     finishRunningTask('✨ 开始扫描与测试');
                     finishCompactIPv4('✅');
@@ -4348,7 +4369,11 @@
                     log(msg.data);
                     break;
                 case 'task_complete':
-                    if (isStoppingTask) break;
+                    if (isStoppingTask) {
+                        resetStoppedTaskUI('已手动终止');
+                        log('任务已手动终止');
+                        break;
+                    }
                     if (officialBatchSpeedRunning) {
                         updateBatchSpeedButton();
                         break;

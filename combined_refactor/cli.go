@@ -263,9 +263,9 @@ func runCLI(cfg *cliConfig) error {
 
 	if !skipGeoCheck {
 		ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
-		country := detectCloudflareTraceCountry(ctx)
+		country, ok := detectCloudflareTraceCountry(ctx)
 		cancel()
-		if !confirmCLIProxyCountry(country) {
+		if !confirmCLIProxyCountry(country, ok) {
 			return fmt.Errorf("已取消：当前网络环境标签为 %s", firstNonEmpty(country, "未知"))
 		}
 	} else {

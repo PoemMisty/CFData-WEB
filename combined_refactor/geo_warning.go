@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 func cloudflareCountryFromHeader(r *http.Request) string {
@@ -20,42 +19,42 @@ func cloudflareCountryFromHeader(r *http.Request) string {
 
 func shouldWarnProxyCountry(country string) bool {
 	country = strings.ToUpper(strings.TrimSpace(country))
-	return country != "" && country != "CN" && country != "XX" && country != "T1"
+	return country == "" || (country != "CN" && country != "XX" && country != "T1")
 }
 
-func detectCloudflareTraceCountry(ctx context.Context) string {
+func detectCloudflareTraceCountry(ctx context.Context) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.cloudflare.com/cdn-cgi/trace", nil)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	req.Header.Set("User-Agent", "CFData-WEB/"+appVersion)
-	client := &http.Client{Timeout: 6 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := upstreamHTTPClient.Do(req)
 	if err != nil {
 		recordDebugError("proxy_country_check", err.Error())
-		return ""
+		return "", false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		recordDebugError("proxy_country_check", fmt.Sprintf("Cloudflare trace status %d", resp.StatusCode))
-		return ""
+		return "", false
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 	if err != nil {
 		recordDebugError("proxy_country_check", err.Error())
-		return ""
+		return "", false
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
 		if ok && key == "loc" {
-			return strings.ToUpper(strings.TrimSpace(value))
+			country := strings.ToUpper(strings.TrimSpace(value))
+			return country, country != ""
 		}
 	}
-	return ""
+	return "", false
 }
 
-func confirmCLIProxyCountry(country string) bool {
-	if !shouldWarnProxyCountry(country) {
+func confirmCLIProxyCountry(country string, ok bool) bool {
+	if ok && !shouldWarnProxyCountry(country) {
 		return true
 	}
 	displayCountry := strings.TrimSpace(country)
@@ -64,7 +63,11 @@ func confirmCLIProxyCountry(country string) bool {
 	}
 	fmt.Println("🚨 代理检测警告")
 	fmt.Printf("读取到的网络标签：%s\n", displayCountry)
-	fmt.Println("检测到您当前很可能处于代理/VPN环境中！")
+	if ok {
+		fmt.Println("检测到您当前很可能处于代理/VPN环境中！")
+	} else {
+		fmt.Println("地区验证失败，无法确认当前是否处于代理/VPN环境中！")
+	}
 	fmt.Println()
 	fmt.Println("在代理状态下进行的IP优选测试结果将不准确，可能导致：")
 	fmt.Println("- 延迟数据失真，无法反映真实网络状况")
