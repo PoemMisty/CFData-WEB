@@ -496,14 +496,17 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 	wasCanceled := runNSBScanWorkers(ctx, len(ips), maxThreads, resultLimit, func(current int) {
 		reportNSBProgress(session, "scan", min(current, total), total, "扫描中")
 	}, func(idx int) int {
-		item := ips[idx]
+		itemCtx, itemCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer itemCancel()
+
 		select {
-		case <-ctx.Done():
+		case <-itemCtx.Done():
 			return 0
 		default:
 		}
 
-		res, failure := scanNSBEntry(ctx, item, fallbackPort, enableTLS, delay, targetDC, idx)
+		item := ips[idx]
+		res, failure := scanNSBEntry(itemCtx, item, fallbackPort, enableTLS, delay, targetDC, idx)
 		if debugMode && failure != nil {
 			failMutex.Lock()
 			failures = append(failures, *failure)

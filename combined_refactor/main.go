@@ -155,6 +155,13 @@ func main() {
 	flag.StringVar(&webPassword, "password", "", "Web 认证密码（需同时设置 -user）")
 	flag.IntVar(&webSessionMinutes, "session", 720, "Web 登录会话有效期（分钟）")
 	flag.Parse()
+	if debugMode && flag.NArg() > 0 {
+		for _, arg := range flag.Args() {
+			if normalizeDebugLevel(arg) == "all" {
+				debugLevel = "all"
+			}
+		}
+	}
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "dns" {
 			customDNSForced = true
