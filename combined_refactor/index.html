@@ -1053,6 +1053,20 @@
             flex: 1;
         }
 
+        .separator-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .separator-row select {
+            flex: 0 0 min(170px, 45%);
+        }
+
+        .separator-row input {
+            flex: 1;
+        }
+
         .inline-check {
             display: inline-flex;
             align-items: center;
@@ -1831,7 +1845,21 @@
                     </div>
                     <div class="modal-field full" id="resultTextSeparatorField">
                         <label>TXT 字段分隔符</label>
-                        <input id="resultTextSeparator" list="textSeparatorOptions" type="text" value="-" placeholder="例如 -、|、空格、~、_" oninput="updateResultPreview()">
+                        <div class="separator-row">
+                            <select id="resultTextSeparatorPreset" onchange="applyTextSeparatorPreset('result', this.value)">
+                                <option value="-" selected>-</option>
+                                <option value="|">|</option>
+                                <option value="space">空格</option>
+                                <option value="~">~</option>
+                                <option value="_">_</option>
+                                <option value="/">/</option>
+                                <option value="&#92;">&#92;</option>
+                                <option value=",">,</option>
+                                <option value=".">.</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <input id="resultTextSeparatorCustom" type="text" value="-" placeholder="自定义分隔符" oninput="markTextSeparatorCustom('result')">
+                        </div>
                     </div>
                     <div class="modal-field full">
                         <label>输出顺序</label>
@@ -1942,7 +1970,21 @@
                     </div>
                     <div class="modal-field full">
                         <label>TXT 字段分隔符</label>
-                        <input id="copyTextSeparator" list="textSeparatorOptions" type="text" value="-" placeholder="例如 -、|、空格、~、_" oninput="updateCopyPreview()">
+                        <div class="separator-row">
+                            <select id="copyTextSeparatorPreset" onchange="applyTextSeparatorPreset('copy', this.value)">
+                                <option value="-" selected>-</option>
+                                <option value="|">|</option>
+                                <option value="space">空格</option>
+                                <option value="~">~</option>
+                                <option value="_">_</option>
+                                <option value="/">/</option>
+                                <option value="&#92;">&#92;</option>
+                                <option value=",">,</option>
+                                <option value=".">.</option>
+                                <option value="custom">自定义</option>
+                            </select>
+                            <input id="copyTextSeparatorCustom" type="text" value="-" placeholder="自定义分隔符" oninput="markTextSeparatorCustom('copy')">
+                        </div>
                     </div>
                     <div class="modal-field full">
                         <label>输出顺序</label>
@@ -1999,16 +2041,6 @@
             </div>
         </div>
     </div>
-
-    <datalist id="textSeparatorOptions">
-        <option value="-">-</option>
-        <option value="|">|</option>
-        <option value="空格">空格</option>
-        <option value="~">~</option>
-        <option value="_">_</option>
-        <option value=",">,</option>
-        <option value=".">.</option>
-    </datalist>
 
     <div class="modal-mask" id="proxyWarningMask">
         <div class="result-modal proxy-warning-modal">
@@ -4556,7 +4588,7 @@
             const rows = getSelectedCopyRows();
             if (!rows.length) throw new Error('暂无可复制结果');
             const fields = copyFieldOrder.length ? copyFieldOrder : getDefaultResultFieldOrderFor(copyModalMode, 'txt');
-            return buildResultContent('txt', rows, fields, getTextSeparator('copyTextSeparator'));
+            return buildResultContent('txt', rows, fields, getTextSeparator('copy'));
         }
 
         function buildCopyPreview() {
@@ -4566,7 +4598,7 @@
             const first = rows[0];
             const ipport = first.ipport || `${first.ip || ''}:${first.port || ''}`;
             const extras = fields.filter((key) => key !== 'ipport').map((key) => first[key]).filter((value) => String(value ?? '').trim() !== '');
-            const separator = getTextSeparator('copyTextSeparator');
+            const separator = getTextSeparator('copy');
             return extras.length ? `${ipport}#${extras.join(separator)}` : ipport;
         }
 
@@ -4593,8 +4625,8 @@
 
         function getCurrentResultRows(mode) {
             if (currentMode === 'nsb') return getNSBResultObjects();
-            const rows = mode === 'test' ? testData.map(testResultToObject) : scanData.map(scanResultToObject);
-            return rows.slice().sort(compareOfficialResultObjects);
+            if (mode === 'test') return testData.map(testResultToObject);
+            return scanData.map(scanResultToObject).slice().sort(compareOfficialResultObjects);
         }
 
         function getCurrentExportRows(mode) {
@@ -4660,11 +4692,33 @@
             const rows = getSelectedResultRows();
             if (!rows.length) throw new Error('暂无可操作结果');
             const fields = resultFieldOrder.length ? resultFieldOrder : getDefaultResultFieldOrder(format);
-            return buildResultContent(format, rows, fields, getTextSeparator('resultTextSeparator'));
+            return buildResultContent(format, rows, fields, getTextSeparator('result'));
         }
 
-        function getTextSeparator(inputId) {
-            const raw = document.getElementById(inputId)?.value ?? '-';
+        function applyTextSeparatorPreset(prefix, value) {
+            const input = document.getElementById(`${prefix}TextSeparatorCustom`);
+            if (input && value === 'custom') {
+                input.value = '';
+                input.focus();
+            } else if (input) {
+                input.value = value === 'space' ? '空格' : value;
+            }
+            updateTextSeparatorPreview(prefix);
+        }
+
+        function markTextSeparatorCustom(prefix) {
+            const preset = document.getElementById(`${prefix}TextSeparatorPreset`);
+            if (preset && preset.value !== 'custom') preset.value = 'custom';
+            updateTextSeparatorPreview(prefix);
+        }
+
+        function updateTextSeparatorPreview(prefix) {
+            if (prefix === 'copy') updateCopyPreview();
+            else updateResultPreview();
+        }
+
+        function getTextSeparator(prefix) {
+            const raw = document.getElementById(`${prefix}TextSeparatorCustom`)?.value ?? '-';
             if (raw === '空格') return ' ';
             return raw;
         }
@@ -4709,7 +4763,7 @@
             if (format === 'txt') {
                 const ipport = first.ipport || `${first.ip || ''}:${first.port || ''}`;
                 const extras = fields.filter((k) => k !== 'ipport').map((k) => first[k]).filter((v) => String(v ?? '').trim() !== '');
-                return extras.length ? `${ipport}#${extras.join(getTextSeparator('resultTextSeparator'))}` : ipport;
+                return extras.length ? `${ipport}#${extras.join(getTextSeparator('result'))}` : ipport;
             }
             const byKey = Object.fromEntries(RESULT_FIELDS.concat(resultCustomFields).map((f) => [f.key, f]));
             const headers = fields.map((k) => byKey[k]?.label || k).join(',');
