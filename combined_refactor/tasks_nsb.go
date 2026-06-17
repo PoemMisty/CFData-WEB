@@ -509,11 +509,16 @@ func runNSBTask(ctx context.Context, session *appSession, fileName, fileContent,
 		host := parts[0]
 		port, err := strconv.Atoi(parts[1])
 		if err != nil || port <= 0 {
+			if debugMode {
+				recordAllDebugError("nsb_parse", fmt.Sprintf("端口无效: %s", item))
+			}
 			continue
 		}
 		resolvedIPs, err := resolveHostToIPs(ctx, host, 50)
 		if err != nil {
-			session.sendWSMessage("log", fmt.Sprintf("跳过 %s: %v", host, err))
+			if debugMode {
+				recordAllDebugError("nsb_resolve", fmt.Sprintf("%s: %v", host, err))
+			}
 			continue
 		}
 		for _, ip := range resolvedIPs {
