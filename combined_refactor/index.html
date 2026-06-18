@@ -22,6 +22,7 @@
             --shadow: 0 18px 24px -8px rgba(30, 41, 59, .08), 0 8px 10px -8px rgba(30, 41, 59, .06), 0 0 0 1px rgba(30, 41, 59, .03);
         }
 
+        :root.dark-theme,
         body.dark-theme {
             --bg-color: #0f172a;
             --card-bg: #1e293b;
@@ -1604,6 +1605,17 @@
             outline: none;
         }
     </style>
+    <script>
+    (function(){
+        var t = localStorage.getItem('cfdata-theme') || 'auto';
+        var dark = t === 'dark';
+        if (t === 'auto') {
+            dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            try { if (window.CFDataAndroid && window.CFDataAndroid.isDarkMode()) dark = true; } catch(e) {}
+        }
+        if (dark) document.documentElement.className = 'dark-theme';
+    })();
+    </script>
 </head>
 
 <body>
@@ -2384,12 +2396,17 @@
 
         function applyTheme(theme) {
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            let androidDark = false;
+            try { if (window.CFDataAndroid && window.CFDataAndroid.isDarkMode()) androidDark = true; } catch(e) {}
+
+            function setDark(dark) {
+                document.documentElement.classList.toggle('dark-theme', dark);
+                document.body.classList.toggle('dark-theme', dark);
+                try { if (window.CFDataAndroid) window.CFDataAndroid.setDarkModeStatusBar(dark); } catch(e) {}
+            }
 
             if (theme === 'auto') {
-                document.body.classList.remove('dark-theme');
-                if (prefersDark) {
-                    document.body.classList.add('dark-theme');
-                }
+                setDark(prefersDark || androidDark);
                 localStorage.setItem('cfdata-theme', 'auto');
                 const autoBtn = document.getElementById('theme-auto');
                 const lightBtn = document.getElementById('theme-light');
@@ -2400,12 +2417,7 @@
                 return;
             }
 
-            if (theme === 'dark') {
-                document.body.classList.add('dark-theme');
-            } else {
-                document.body.classList.remove('dark-theme');
-            }
-
+            setDark(theme === 'dark');
             localStorage.setItem('cfdata-theme', theme);
             const autoBtn = document.getElementById('theme-auto');
             const lightBtn = document.getElementById('theme-light');
