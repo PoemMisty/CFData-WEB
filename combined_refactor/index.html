@@ -833,7 +833,7 @@
         }
 
         .official-test-actions {
-            grid-template-columns: auto minmax(92px, auto) minmax(92px, auto) auto auto;
+            grid-template-columns: auto minmax(92px, auto) minmax(92px, auto) auto auto auto;
         }
 
         .nsb-scan-actions {
@@ -3097,12 +3097,17 @@
             isStoppingTask = false;
             renderBackgroundStatusCard(snapshot);
             if (!snapshot.running) {
-                backgroundTaskActive = false;
-                backgroundTaskFollowing = false;
+                backgroundTaskActive = true;
                 isStoppingTask = false;
                 resetButton('✨ 开始扫描与测试');
                 updateBackgroundButton();
                 stopBackgroundStatusPolling();
+                if (snapshot.mode === 'official' || snapshot.mode === 'nsb') {
+                    if (currentMode !== snapshot.mode) switchMode(snapshot.mode);
+                    runningTaskMode = snapshot.mode;
+                    runningTaskLabel = snapshot.label || '后台任务';
+                    runningTaskTab = 'scan';
+                }
                 return;
             }
             if ((snapshot.mode === 'official' || snapshot.mode === 'nsb') && !backgroundTaskFocusedOnce) {
@@ -3123,8 +3128,10 @@
         function renderBackgroundStatusCard(snapshot) {
             const card = document.getElementById('backgroundStatusCard');
             if (!card) return;
-            card.classList.toggle('active', !!snapshot.running);
-            document.getElementById('backgroundStatusTitle').textContent = `🕘 ${snapshot.label || '后台任务运行中'}`;
+            const isComplete = !snapshot.running && snapshot.phase && snapshot.phase !== '-' && snapshot.phase !== '处理中' && snapshot.phase !== '扫描中' && snapshot.phase !== '详细测试中' && snapshot.phase !== '测速中';
+            card.classList.toggle('active', !!snapshot.running || isComplete);
+            const title = isComplete ? `✅ ${snapshot.phase || '任务完成'}` : `🕘 ${snapshot.label || '后台任务运行中'}`;
+            document.getElementById('backgroundStatusTitle').textContent = title;
             const source = snapshot.params?.sourceURL || snapshot.params?.fileName || (snapshot.mode === 'official' ? '官方内置地址库' : '') || snapshot.params?.outFile || snapshot.params?.dc || '-';
             document.getElementById('backgroundSource').textContent = source;
             const phaseText = snapshot.phase || '-';
@@ -3159,7 +3166,13 @@
             const followBtn = document.getElementById('btnFollowBackground');
             if (followBtn) {
                 followBtn.disabled = backgroundTaskFollowing;
-                followBtn.textContent = backgroundTaskFollowing ? '📡 正在跟随实时数据' : '📡 跟随实时数据';
+                if (backgroundTaskFollowing) {
+                    followBtn.textContent = '📡 正在跟随实时数据';
+                } else if (isComplete) {
+                    followBtn.textContent = '📥 获取结果';
+                } else {
+                    followBtn.textContent = '📡 跟随实时数据';
+                }
             }
         }
 
@@ -3227,9 +3240,12 @@
         }
 
         function finishRunningTask(buttonText = '✨ 开始扫描与测试') {
+            const wasBackgroundTask = backgroundTaskActive;
             isTaskRunning = false;
             isStoppingTask = false;
-            backgroundTaskActive = false;
+            if (!wasBackgroundTask) {
+                backgroundTaskActive = false;
+            }
             backgroundTaskFollowing = false;
             backgroundTaskFocusedOnce = false;
             stopBackgroundStatusPolling();
@@ -3237,8 +3253,10 @@
             clearRunningTaskLabel();
             resetButton(buttonText);
             updateBackgroundButton();
-            const card = document.getElementById('backgroundStatusCard');
-            if (card) card.classList.remove('active');
+            if (!wasBackgroundTask) {
+                const card = document.getElementById('backgroundStatusCard');
+                if (card) card.classList.remove('active');
+            }
             updateNSBCompactToggle();
         }
 
@@ -4249,6 +4267,11 @@
             officialContinueSpeedUnlocked = false;
             isStoppingTask = false;
 
+            backgroundTaskActive = false;
+            backgroundTaskFollowing = false;
+            const card = document.getElementById('backgroundStatusCard');
+            if (card) card.classList.remove('active');
+
             isTaskRunning = true;
             runningTaskLabel = '官方优选扫描';
             runningTaskMode = 'official';
@@ -4350,6 +4373,12 @@
             runningTaskLabel = '非标优选';
             runningTaskMode = 'nsb';
             runningTaskTab = 'scan';
+            
+            backgroundTaskActive = false;
+            backgroundTaskFollowing = false;
+            const card = document.getElementById('backgroundStatusCard');
+            if (card) card.classList.remove('active');
+            
             updateNSBCompactToggle();
             setStartLoading(getRunningButtonText(), 'linear-gradient(135deg, var(--error-color), #dc2626)', '0 4px 12px rgba(239, 68, 68, 0.3), inset 0 1px 1px rgba(255,255,255,0.2)');
             renderScanHeaders('nsb');

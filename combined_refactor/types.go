@@ -234,6 +234,7 @@ type appSession struct {
 	nsbMutex             sync.Mutex
 	nsbHeaders           []string
 	nsbRows              [][]string
+	nsbCompletePayload   *nsbCSVCompletePayload
 	progressMutex        sync.Mutex
 	progressState        map[string][2]int
 	progressPrintTime    map[string]time.Time
