@@ -348,7 +348,25 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			session = backgroundSession
 			snapshot := backgroundSession.backgroundSummary()
 			backgroundSession.sendWSMessage("background_task_following", snapshot)
-			
+
+			if !snapshot.Running && snapshot.Mode == "official" {
+				backgroundSession.scanMutex.Lock()
+				scanResults := append([]ScanResult(nil), backgroundSession.scanResults...)
+				backgroundSession.scanMutex.Unlock()
+				if len(scanResults) > 0 {
+					backgroundSession.sendWSMessage("scan_complete_wait_dc", buildDCList(scanResults))
+				}
+				backgroundSession.testMutex.Lock()
+				results := append([]TestResult(nil), backgroundSession.testResults...)
+				backgroundSession.testMutex.Unlock()
+				if len(results) > 0 {
+					for _, res := range results {
+						backgroundSession.sendWSMessage("test_result", res)
+					}
+					backgroundSession.sendWSMessage("test_complete", results)
+				}
+			}
+
 			if !snapshot.Running && snapshot.Phase == "完成" {
 				backgroundSession.nsbMutex.Lock()
 				payload := backgroundSession.nsbCompletePayload
@@ -554,6 +572,31 @@ func setGitHubHeaders(req *http.Request, token string) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "cfdata")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+}
+
+func buildDCList(scanResults []ScanResult) []DataCenterInfo {
+	dcMap := make(map[string]*DataCenterInfo)
+	for _, res := range scanResults {
+		if _, ok := dcMap[res.DataCenter]; !ok {
+			dcMap[res.DataCenter] = &DataCenterInfo{
+				DataCenter: res.DataCenter,
+				DCCountry:  res.DCCountry,
+				City:       res.City,
+				IPCount:    0,
+				MinLatency: 999999,
+			}
+		}
+		info := dcMap[res.DataCenter]
+		info.IPCount++
+		if lat := int(res.TCPDuration / time.Millisecond); lat < info.MinLatency {
+			info.MinLatency = lat
+		}
+	}
+	dcList := make([]DataCenterInfo, 0, len(dcMap))
+	for _, info := range dcMap {
+		dcList = append(dcList, *info)
+	}
+	return dcList
 }
 
 func escapeGitHubContentPath(path string) string {

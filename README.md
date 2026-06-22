@@ -43,10 +43,10 @@ CLI 模式：
 ./cfdata-linux-amd64 -cli
 
 # 官方模式：扫描 IPv4，测试 443 端口，测速地址自动选择
-./cfdata-linux-amd64 -cli -mode official -iptype 4 -testport 443 -url auto
+./cfdata-linux-amd64 -cli -mode official -offiptype 4 -offport 443 -offurl auto
 
 # 非标模式：读取本地文件，开启 TLS 和 5 个测速线程
-./cfdata-linux-amd64 -cli -mode nsb -file ip.txt -tls=true -speedtest 5 -url auto
+./cfdata-linux-amd64 -cli -mode nsb -nsbfile ip.txt -nsbtls=true -nsbspeedtest 5 -offurl auto
 ```
 
 ## Web 使用
@@ -99,12 +99,12 @@ Web 下拉项：
 - 移动专属
 - 手动输入
 
-CLI 可通过 `-url` 指定：
+CLI 可通过 `-offurl`/`-nsburl` 指定：
 
 ```bash
-./cfdata-linux-amd64 -cli -url auto
-./cfdata-linux-amd64 -cli -url speed.cloudflare.com/__down?bytes=99999999
-./cfdata-linux-amd64 -cli -url https://example.com/file.bin
+./cfdata-linux-amd64 -cli -offurl auto
+./cfdata-linux-amd64 -cli -offurl speed.cloudflare.com/__down?bytes=99999999
+./cfdata-linux-amd64 -cli -offurl https://example.com/file.bin
 ```
 
 说明：测速只读取响应字节流计算速度，不会把测速文件保存到本地。
@@ -115,24 +115,28 @@ CLI 可通过 `-url` 指定：
 -cli              启用 CLI 模式
 -mode             official 或 nsb
 -scanmode         扫描方式：tcping（默认，TCP 握手延迟）或 httping（HTTP TTFB，延迟比 tcping 高属正常，不同模式数据不可对比）
--threads          扫描并发数
--testport         官方测试/测速端口
--delay            延迟阈值，单位毫秒
--url              测速下载地址，默认 auto
+-offthreads       官方扫描并发数
+-nsbthreads       非标扫描并发数
+-offport          官方测试/测速端口
+-offdelay         官方延迟阈值，单位毫秒
+-nsbdelay         非标延迟阈值，单位毫秒
+-offurl           官方测速下载地址，默认 auto
+-nsburl           非标测速下载地址，默认 auto
 -dns              自定义 DNS 服务器
 -debug            调试日志等级：false、error、all
--out              输出文件名
+-offout           官方输出文件名
+-nsbout           非标输出文件名
 ```
 
 非标常用参数：
 
 ```text
--file             本地输入文件
--sourceurl        网络输入 URL
+-nsbfile          本地输入文件
+-nsbsourceurl     网络输入 URL
 -nsbfallbackport  非标输入缺省端口；不传时随 TLS 自动使用 443/80
--tls              非标是否启用 TLS
--speedtest        非标测速线程数，0 表示不测速
--resultlimit      非标延迟测试结果上限
+-nsbtls           非标是否启用 TLS
+-nsbspeedtest     非标测速线程数，0 表示不测速。多 IP 并发影响实际速度，需要准确应设为 1
+-nsbresultlimit   非标延迟测试结果上限
 -nsbspeedmin      非标测速合格阈值，单位 MB/s
 -nsbspeedlimit    非标测速合格结果上限
 ```

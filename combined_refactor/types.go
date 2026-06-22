@@ -272,6 +272,7 @@ type backgroundTaskSnapshot struct {
 	SpeedQualified int                    `json:"speedQualified"`
 	TestCount      int                    `json:"testCount"`
 	DCCount        int                    `json:"dcCount"`
+	DCInfo         string                 `json:"dcInfo,omitempty"`
 	Running        bool                   `json:"running"`
 	StartedAt      time.Time              `json:"startedAt"`
 	UpdatedAt      time.Time              `json:"updatedAt"`

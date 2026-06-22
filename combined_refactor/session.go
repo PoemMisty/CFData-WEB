@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -343,6 +344,15 @@ func (s *appSession) applyBackgroundMessageLocked(msgType string, data interface
 	case "scan_complete_wait_dc":
 		if list, ok := data.([]DataCenterInfo); ok {
 			s.backgroundSnapshot.DCCount = len(list)
+			names := make([]string, 0, len(list))
+			for _, dc := range list {
+				name := dc.DataCenter
+				if dc.City != "" {
+					name += "(" + dc.City + ")"
+				}
+				names = append(names, name)
+			}
+			s.backgroundSnapshot.DCInfo = strings.Join(names, ", ")
 		}
 		s.backgroundSnapshot.Phase = "扫描完成"
 		s.backgroundSnapshot.Message = "扫描完成，等待详细测试或后续阶段"

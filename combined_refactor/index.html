@@ -1696,7 +1696,7 @@
                     <input id="officialDelay" type="number" value="500" placeholder="默认 500ms">
                 </div>
                 <div class="option-item">
-                    <span class="label" title="测速达标下限，单位 MB/s">📉 扫描合格速度</span>
+                    <span class="label" title="测速达标下限，单位 MB/s">📉 测试合格速度</span>
                     <input id="officialSpeedMin" type="number" value="0.1" step="0.01" placeholder="默认 0.1MB/s" oninput="syncOfficialSpeedConfigState()">
                 </div>
                 <div class="option-item">
@@ -1788,7 +1788,7 @@
                     <input id="nsbResultLimit" type="number" value="1000" placeholder="非 0 正整数">
                 </div>
                 <div class="option-item">
-                    <span class="label" title="测速达标下限，单位 MB/s">📉 扫描合格速度</span>
+                    <span class="label" title="测速达标下限，单位 MB/s">📉 测试合格速度</span>
                     <input id="nsbSpeedMin" type="number" value="0.1" step="0.01" placeholder="默认 0.1MB/s" oninput="syncNSBSpeedConfigState()">
                 </div>
                 <div class="option-item">
@@ -3203,7 +3203,9 @@
             document.getElementById('backgroundSource').textContent = source;
             const phaseText = snapshot.phase || '-';
             let dcSuffix = '';
-            if ((snapshot.testCount || 0) > 0 || (snapshot.dcCount || 0) > 0) {
+            if (snapshot.dcInfo) {
+                dcSuffix = ` [${snapshot.dcInfo}]`;
+            } else if ((snapshot.testCount || 0) > 0 || (snapshot.dcCount || 0) > 0) {
                 dcSuffix = ` (详细: ${snapshot.testCount || 0} / DC: ${snapshot.dcCount || 0})`;
             }
             document.getElementById('backgroundPhase').textContent = phaseText + dcSuffix;
@@ -5552,6 +5554,9 @@
                         onTestComplete();
                         officialTestCompletePending = true;
                         updateProgress(msg.data.length, msg.data.length, '测试完成');
+                        if (backgroundTaskFollowing) {
+                            switchTab('test');
+                        }
                         if (officialAutoSpeedPending && officialAutoStage === 'test') {
                             officialAutoStage = 'speed';
                         } else {
