@@ -4085,10 +4085,10 @@
             if (getScanMode() !== 'httping') return 1;
             if (currentMode === 'official') {
                 const port = parseInt(document.getElementById('testPort')?.value) || 443;
-                return [443, 2053, 2083, 2087, 2096, 8443].includes(port) ? 2.5 : 1.3;
+                return [443, 2053, 2083, 2087, 2096, 8443].includes(port) ? 4.0 : 1.3;
             }
             const tls = String(document.getElementById('nsbTls')?.value || 'on').toLowerCase();
-            return tls !== 'off' ? 2.5 : 1.3;
+            return tls !== 'off' ? 4.0 : 1.3;
         }
 
         function getLatencyColor(val, factor) {
