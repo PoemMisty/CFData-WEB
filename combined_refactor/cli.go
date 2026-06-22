@@ -224,7 +224,7 @@ func registerCLIFlags() *cliConfig {
 	flag.Usage = printCLIUsage
 	flag.BoolVar(&cfg.enabled, "cli", false, "启用命令行模式（默认启动 Web）")
 	flag.StringVar(&cfg.mode, "mode", "official", "CLI 模式：official 或 nsb")
-	flag.StringVar(&cfg.scanMode, "scanmode", "tcping", "扫描方式：tcping（默认，仅 TCP 握手延迟）或 httping（TTFB 全链路延迟，含 TLS 握手，数值偏高）")
+	flag.StringVar(&cfg.scanMode, "scanmode", "tcping", "扫描方式：tcping（默认，TCP 握手延迟）或 httping（HTTP TTFB，延迟比 tcping 高属正常，不同模式数据不可对比）")
 	flag.IntVar(&cfg.ipType, "iptype", 4, "官方模式 IP 类型：4 或 6")
 	flag.IntVar(&cfg.threads, "threads", 100, "扫描并发数")
 	flag.IntVar(&cfg.speedTest, "speedtest", 0, "非标测速线程数；表示同时测速的 IP 数量，0 表示不测速")

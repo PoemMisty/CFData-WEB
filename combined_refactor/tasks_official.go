@@ -94,7 +94,8 @@ func scanOfficialIP(ctx context.Context, ip string, port int, delay int) (*ScanR
 }
 
 func scanOfficialHTTP(ctx context.Context, ip string, port int, delay int) (*ScanResult, string, string) {
-	effectiveDelay := int(float64(delay) * 2.5)
+	mul := latencyMultiplier(scanModeHTTPing, isTLSPort(port))
+	effectiveDelay := int(float64(delay) * mul)
 
 	dialer := &net.Dialer{Timeout: timeout}
 	start := time.Now()
@@ -185,7 +186,11 @@ func scanOfficialHTTP(ctx context.Context, ip string, port int, delay int) (*Sca
 
 func testIPLatency(ctx context.Context, ip string, port int, delay int, scanMode string) (*TestResult, string, string) {
 	isHTTPing := scanMode == scanModeHTTPing
-	effectiveDelay := int(float64(delay) * 2.5)
+	mul := 1.0
+	if isHTTPing {
+		mul = latencyMultiplier(scanModeHTTPing, isTLSPort(port))
+	}
+	effectiveDelay := int(float64(delay) * mul)
 	dialerTimeout := time.Duration(delay) * time.Millisecond
 	if delay <= 0 {
 		dialerTimeout = 3 * time.Second

@@ -51,7 +51,14 @@ CLI 模式：
 
 ## Web 使用
 
-界面顶部「扫描方式」选择器支持 TCPing（默认）和 HTTPing。HTTPing 通过 HTTP HEAD 请求测量 TTFB（Time To First Byte），包含 TCP 握手、TLS 协商和 HTTP 响应时间，数值通常比 TCPing 偏高，更接近实际访问体验。
+界面顶部「扫描方式」选择器支持 TCPing（默认）和 HTTPing。不同扫描模式的延迟数据不可互相比较，仅同模式内的对比才有意义。
+
+### 扫描方式说明
+
+- **TCPing**：测量 TCP 握手延迟，基准值。
+- **HTTPing**：测量 HTTP TTFB（Time To First Byte），延迟比 TCPing 高属正常现象。延迟阈值和渲染颜色已按倍率自动缩放：
+  - 无 TLS（HTTP 端口）：×1.3
+  - 有 TLS（HTTPS 端口）：×2.5
 
 ### 官方优选
 
@@ -107,7 +114,7 @@ CLI 可通过 `-url` 指定：
 ```text
 -cli              启用 CLI 模式
 -mode             official 或 nsb
--scanmode         tcping（默认）或 httping
+-scanmode         扫描方式：tcping（默认，TCP 握手延迟）或 httping（HTTP TTFB，延迟比 tcping 高属正常，不同模式数据不可对比）
 -threads          扫描并发数
 -testport         官方测试/测速端口
 -delay            延迟阈值，单位毫秒

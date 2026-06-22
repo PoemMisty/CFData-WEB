@@ -54,7 +54,8 @@ func resolveHostToIPs(ctx context.Context, host string, maxIPs int) ([]string, e
 }
 
 func scanNSBEntryHTTP(ctx context.Context, item string, fallbackPort int, enableTLS bool, delay int, targetDC string, inputIndex int) (*iptestResult, *nsbFailureRecord) {
-	effectiveDelay := int(float64(delay) * 2.5)
+	mul := latencyMultiplier(scanModeHTTPing, enableTLS)
+	effectiveDelay := int(float64(delay) * mul)
 
 	parts := strings.Fields(item)
 	if len(parts) < 1 || len(parts) > 2 {

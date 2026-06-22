@@ -19,6 +19,16 @@ const (
 	scanModeHTTPing  = "httping"
 )
 
+func latencyMultiplier(scanMode string, isTLS bool) float64 {
+	if scanMode != scanModeHTTPing {
+		return 1.0
+	}
+	if isTLS {
+		return 2.5
+	}
+	return 1.3
+}
+
 const (
 	timeout     = 3 * time.Second
 	maxDuration = 5 * time.Second

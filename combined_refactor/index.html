@@ -2940,9 +2940,9 @@
             const hint = getScanModeHint();
             if (!hint) return;
             if (mode === 'httping') {
-                hint.value = '测量 HTTP GET 请求的完整 TTFB（含 TLS 握手），阈值自动放大 2.5 倍';
+                hint.value = 'HTTPing 延迟比 TCPing 高属正常现象，不同模式数据不可互相比较';
             } else {
-                hint.value = '仅测量 TCP 握手延迟';
+                hint.value = '仅测量 TCP 握手延迟，不同模式数据不可互相比较';
             }
         }
 
@@ -3512,7 +3512,8 @@
         function renderScanRowOfficial(row) {
             const tbody = document.querySelector('#scanTable tbody');
             const latencyVal = parseFloat(row.LatencyStr);
-            const latencyColor = getLatencyColor(latencyVal);
+            const lcFactor = getLatencyColorFactor();
+            const latencyColor = getLatencyColor(latencyVal, lcFactor);
             const html = `<tr><td>${renderIPCell(row.IP, row.OriginalInput || row.originalInput)}</td><td><span class="copy-ip" onclick="copyToClipboard('${row.Port ?? ''}', event)">${row.Port ?? '-'}</span></td><td>${row.DataCenter || '-'}</td><td>${row.DCCountry || '-'}</td><td>${row.Region || '-'}</td><td>${row.City || '-'}</td><td>${getScanModeLabel()}</td><td style="color:${latencyColor}; font-weight:600;">${row.LatencyStr || '-'}</td></tr>`;
             tbody.insertAdjacentHTML('beforeend', html);
         }
@@ -3595,7 +3596,8 @@
                     return `<td><span class="copy-ip" onclick="copyToClipboard('${escapeJSString(rawVal)}', event)">${val}</span></td>`;
                 } else if (idx === latencyIndex && latencyIndex !== -1) {
                     const latencyVal = parseFloat(rawVal);
-                    const color = getLatencyColor(latencyVal);
+                    const lcFactor = getLatencyColorFactor();
+                    const color = getLatencyColor(latencyVal, lcFactor);
                     return `<td style="color:${color}; font-weight:600;">${val}</td>`;
                 } else if (idx === lossIndex && lossIndex !== -1) {
                     const lossVal = parseFloat(rawVal);
@@ -3948,7 +3950,8 @@
             dcList.forEach((dc) => {
                 const isTested = testedDCs.has(dc.DataCenter);
                 const isTesting = currentTestingDC === dc.DataCenter;
-                const latencyColor = getLatencyColor(dc.MinLatency);
+                const lcFactor = getLatencyColorFactor();
+                const latencyColor = getLatencyColor(dc.MinLatency, lcFactor);
                 const btn = isTesting ? `<button class="action-btn" disabled>测试中...</button>` : (isTested ? `<button class="action-btn selected" onclick="selectDC('${dc.DataCenter}')">重新测试</button>` : `<button class="action-btn" onclick="selectDC('${dc.DataCenter}')">选择测试</button>`);
                 const tr = `<tr><td><strong>${dc.DataCenter}</strong></td><td>${dc.DCCountry || '-'}</td><td>${dc.City}</td><td>${dc.IPCount}</td><td style="color:${latencyColor}; font-weight:600;">${dc.MinLatency} ms</td><td>${btn}</td></tr>`;
                 tbody.insertAdjacentHTML('beforeend', tr);
@@ -4001,7 +4004,8 @@
             const isTesting = currentSpeedTestingIP === res.IP;
             const speedDisabled = isTesting || isTaskRunning || officialBatchSpeedRunning;
             const buttonText = isTesting ? '测速中' : (res.Speed ? '重新测速' : '测速');
-            const row = `<tr class="${speedStatus === 'qualified' ? 'row-qualified' : (speedStatus === 'unqualified' ? 'row-unqualified' : '')}"><td>${renderIPCell(res.IP, res.OriginalInput || res.originalInput)}</td><td><span class="copy-ip" onclick="copyToClipboard('${port}', event)">${port}</span></td><td>${meta.dc || '-'}</td><td>${meta.dcCountry || '-'}</td><td>${meta.region || '-'}</td><td>${meta.city || '-'}</td><td>${getScanModeLabel()}</td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}" style="color:${speedColor};"><span>${speedText}</span>${renderSpeedStatusTag(speedStatus)}</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')" ${speedDisabled ? 'disabled' : ''}>${buttonText}</button></td></tr>`;
+            const lcFactor = getLatencyColorFactor();
+            const row = `<tr class="${speedStatus === 'qualified' ? 'row-qualified' : (speedStatus === 'unqualified' ? 'row-unqualified' : '')}"><td>${renderIPCell(res.IP, res.OriginalInput || res.originalInput)}</td><td><span class="copy-ip" onclick="copyToClipboard('${port}', event)">${port}</span></td><td>${meta.dc || '-'}</td><td>${meta.dcCountry || '-'}</td><td>${meta.region || '-'}</td><td>${meta.city || '-'}</td><td>${getScanModeLabel()}</td><td>${(res.LossRate * 100).toFixed(0)}%</td><td>${(res.MinLatency / 1_000_000).toFixed(0)} ms</td><td>${(res.MaxLatency / 1_000_000).toFixed(0)} ms</td><td style="color:${getLatencyColor(res.AvgLatency / 1_000_000, lcFactor)}; font-weight:600;">${(res.AvgLatency / 1_000_000).toFixed(0)} ms</td><td style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:none;"><span class="speed-result" id="speed-val-${res.IP.replace(/[:.]/g, '_')}" style="color:${speedColor};"><span>${speedText}</span>${renderSpeedStatusTag(speedStatus)}</span><button class="action-btn speed-btn" id="btn-speed-${res.IP.replace(/[:.]/g, '_')}" onclick="runSpeedTest('${res.IP}')" ${speedDisabled ? 'disabled' : ''}>${buttonText}</button></td></tr>`;
             document.querySelector('#testTable tbody').insertAdjacentHTML('beforeend', row);
         }
 
@@ -4077,10 +4081,21 @@
             }
         }
 
-        function getLatencyColor(val) {
+        function getLatencyColorFactor() {
+            if (getScanMode() !== 'httping') return 1;
+            if (currentMode === 'official') {
+                const port = parseInt(document.getElementById('testPort')?.value) || 443;
+                return [443, 2053, 2083, 2087, 2096, 8443].includes(port) ? 2.5 : 1.3;
+            }
+            const tls = String(document.getElementById('nsbTls')?.value || 'on').toLowerCase();
+            return tls !== 'off' ? 2.5 : 1.3;
+        }
+
+        function getLatencyColor(val, factor) {
             const v = parseFloat(val);
             if (isNaN(v)) return 'inherit';
-            const matched = LATENCY_COLORS.find((item) => v <= item.end);
+            const adjusted = factor ? v / factor : v;
+            const matched = LATENCY_COLORS.find((item) => adjusted <= item.end);
             return matched ? matched.color : 'inherit';
         }
 
