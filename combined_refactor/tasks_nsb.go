@@ -1141,19 +1141,12 @@ func nsbCSVRows(results []iptestResult, includeSpeed bool, compact bool, scanMod
 }
 
 func nsbCSVHeaders(compact bool, scanMode string) []string {
-	mode := scanModeLabel(scanMode)
-	insertMode := []string{"扫描方式", mode}
 	if compact {
-		h := []string{"IP地址", "OriginalInput", "端口号", "TLS", "丢包率"}
-		h = append(h, insertMode...)
-		h = append(h, "网络延迟", "下载速度", "出站IP", "IP类型", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织")
-		return h
+		return []string{"IP地址", "OriginalInput", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
 	}
-	h := []string{"IP地址", "OriginalInput", "端口号", "TLS", "丢包率"}
-	h = append(h, insertMode...)
-	h = append(h, "网络延迟", "下载速度", "出站IP", "IP类型", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织")
-	h = append(h, "访问协议", "TLS版本", "SNI", "HTTP版本", "WARP", "Gateway", "RBI", "密钥交换", "时间戳")
-	return h
+	headers := []string{"IP地址", "OriginalInput", "端口号", "TLS", "丢包率", "扫描方式", "网络延迟", "下载速度", "出站IP", "IP类型", "数据中心", "源IP位置", "地区", "城市", "ASN号码", "ASN组织"}
+	headers = append(headers, "访问协议", "TLS版本", "SNI", "HTTP版本", "WARP", "Gateway", "RBI", "密钥交换", "时间戳")
+	return headers
 }
 
 func nsbCSVRow(res iptestResult, includeSpeed bool, compact bool, scanMode string) []string {
