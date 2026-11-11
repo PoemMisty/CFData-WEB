@@ -194,13 +194,20 @@ public class MainActivity extends Activity {
                 filePathCallback = callback;
                 Intent intent = params.createIntent();
                 intent.setType("*/*");
+                if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
                 intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
                         "text/plain",
                         "text/csv",
                         "text/comma-separated-values",
                         "application/csv",
                         "application/vnd.ms-excel",
-                        "application/octet-stream"
+                        "application/octet-stream",
+                        "application/json",
+                        "application/x-yaml",
+                        "application/yaml",
+                        "text/*"
                 });
                 try {
                     startActivityForResult(intent, REQUEST_FILE_CHOOSER);
@@ -405,7 +412,20 @@ public class MainActivity extends Activity {
             if (filePathCallback == null) {
                 return;
             }
-            Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            Uri[] result = null;
+            if (resultCode == RESULT_OK && data != null) {
+                android.content.ClipData clip = data.getClipData();
+                if (clip != null && clip.getItemCount() > 0) {
+                    java.util.ArrayList<Uri> uris = new java.util.ArrayList<>();
+                    for (int i = 0; i < clip.getItemCount(); i++) {
+                        Uri u = clip.getItemAt(i).getUri();
+                        if (u != null) uris.add(u);
+                    }
+                    result = uris.toArray(new Uri[0]);
+                } else if (data.getData() != null) {
+                    result = new Uri[]{data.getData()};
+                }
+            }
             filePathCallback.onReceiveValue(result);
             filePathCallback = null;
         }

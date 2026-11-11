@@ -1792,12 +1792,13 @@
             <div id="nsbControls" class="hidden">
                 <div class="control-title">
                     <span>非标参数</span>
-                    <span style="font-size:12px;color:var(--text-secondary);">支持上传 txt/csv 文件或填写网络
+                    <span style="font-size:12px;color:var(--text-secondary);">支持一次选择多个文本文件（txt/csv/list/yaml/json 等，可混选）或填写网络
                         URL（二选一）；若识别失败，请整理为每行一个目标，格式：IP 空格 端口，例如 1.2.3.4 443</span>
                 </div>
                 <div class="option-item full-width">
                     <span class="label" title="支持 txt/csv 格式">📄 IP 文件</span>
-                    <input id="nsbFileInput" type="file" accept=".txt,.csv,text/plain,text/csv"
+                    <input id="nsbFileInput" type="file" multiple
+                        accept=".txt,.csv,.list,.conf,.ini,.yaml,.yml,.json,.md,.log,text/*,application/json"
                         onchange="syncNSBInputMode('file')">
                 </div>
                 <div class="option-item full-width">
@@ -2506,23 +2507,56 @@
         const fileInput = document.getElementById('nsbFileInput');
         const nsbSourceUrlInput = document.getElementById('nsbSourceUrl');
 
-        document.getElementById('nsbFileInput').addEventListener('change', e => {
-            const file = e.target.files[0];
-            if (!file) {
-                uploadedFileName = '';
-                uploadedFileContent = '';
+        const NSB_FILE_BOUNDARY = '\n#==CFDATA-FILE-BOUNDARY==#\n';
+        const NSB_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = () => reject(reader.error || new Error('读取失败'));
+                reader.readAsText(file);
+            });
+        }
+        let nsbFileReadSeq = 0;
+        document.getElementById('nsbFileInput').addEventListener('change', async e => {
+            const files = Array.from(e.target.files || []);
+            const seq = ++nsbFileReadSeq;
+            uploadedFileName = '';
+            uploadedFileContent = '';
+            if (!files.length) {
                 syncNSBInputMode();
                 return;
             }
-            uploadedFileName = file.name || 'upload.txt';
-            const reader = new FileReader();
-            reader.onload = () => {
-                uploadedFileContent = String(reader.result || '');
-                syncNSBInputMode('file');
-                log(`已选择文件: ${uploadedFileName}`);
-            };
-            reader.onerror = () => log('读取文件失败');
-            reader.readAsText(file);
+            const totalBytes = files.reduce((n, f) => n + (f.size || 0), 0);
+            if (totalBytes > NSB_MAX_TOTAL_BYTES) {
+                log(`所选文件合计 ${(totalBytes / 1048576).toFixed(1)} MB，超过 50 MB 上限，请分批导入`);
+                e.target.value = '';
+                return;
+            }
+            const parts = [];
+            const okNames = [];
+            for (const file of files) {
+                try {
+                    const text = await readFileAsText(file);
+                    if (text.indexOf('\u0000') !== -1) {
+                        log(`已跳过非文本文件: ${file.name}`);
+                        continue;
+                    }
+                    parts.push(text);
+                    okNames.push(file.name || 'upload.txt');
+                } catch (err) {
+                    log(`读取文件失败: ${file.name}`);
+                }
+            }
+            if (seq !== nsbFileReadSeq) return;
+            if (!parts.length) {
+                log('没有可用的文本文件');
+                return;
+            }
+            uploadedFileContent = parts.join(NSB_FILE_BOUNDARY);
+            uploadedFileName = okNames.length === 1 ? okNames[0] : `${okNames.length} 个文件（${okNames.join(', ')}）`;
+            syncNSBInputMode('file');
+            log(okNames.length === 1 ? `已选择文件: ${okNames[0]}` : `已选择 ${okNames.length} 个文件: ${okNames.join(', ')}`);
         });
 
         function syncNSBInputMode(preferred) {
