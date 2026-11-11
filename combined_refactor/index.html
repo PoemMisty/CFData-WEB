@@ -369,7 +369,8 @@
         }
 
         .option-item input,
-        .option-item select {
+        .option-item select,
+        .option-item textarea {
             flex: 1;
             min-width: 0;
             box-sizing: border-box;
@@ -432,7 +433,8 @@
         }
 
         input,
-        select {
+        select,
+        #nsbPasteInput {
             border: 1px solid var(--border-color);
             border-radius: 10px;
             background: var(--bg-color);
@@ -1562,6 +1564,7 @@
 
             .option-item input,
             .option-item select,
+            .option-item textarea,
             .option-item .field-with-action {
                 width: 100%;
             }
@@ -1792,14 +1795,22 @@
             <div id="nsbControls" class="hidden">
                 <div class="control-title">
                     <span>非标参数</span>
-                    <span style="font-size:12px;color:var(--text-secondary);">支持一次选择多个文本文件（txt/csv/list/yaml/json 等，可混选）或填写网络
-                        URL（二选一）；若识别失败，请整理为每行一个目标，格式：IP 空格 端口，例如 1.2.3.4 443</span>
+                    <span style="font-size:12px;color:var(--text-secondary);">支持多选文本文件（txt/csv/list/yaml/json 等）、直接粘贴 IP（文件与粘贴可同时用），或填写网络
+                        URL（本地与网络二选一）；若识别失败，请整理为每行一个目标，格式：IP 空格 端口，例如 1.2.3.4 443</span>
                 </div>
                 <div class="option-item full-width">
                     <span class="label" title="支持 txt/csv 格式">📄 IP 文件</span>
                     <input id="nsbFileInput" type="file" multiple
                         accept=".txt,.csv,.list,.conf,.ini,.yaml,.yml,.json,.md,.log,text/*,application/json"
                         onchange="syncNSBInputMode('file')">
+                </div>
+                <div class="option-item full-width">
+                    <span class="label" title="直接粘贴 IP 列表，可与文件同时使用">📋 粘贴 IP</span>
+                    <textarea id="nsbPasteInput" rows="5" spellcheck="false" autocomplete="off"
+                        style="resize: vertical; font-family: monospace; min-height: 110px;"
+                        placeholder="每行一个，或用空格/逗号分隔，例如：&#10;1.2.3.4 443&#10;5.6.7.8:2053&#10;[2606:4700::1]:443&#10;visa.cn"
+                        oninput="syncNSBInputMode('paste')"></textarea>
+                    <span id="nsbPasteCount" style="font-size:12px;color:var(--text-secondary);"></span>
                 </div>
                 <div class="option-item full-width">
                     <span class="label" title="从网络地址获取 IP 列表">🌐 网络 URL</span>
@@ -2559,10 +2570,26 @@
             log(okNames.length === 1 ? `已选择文件: ${okNames[0]}` : `已选择 ${okNames.length} 个文件: ${okNames.join(', ')}`);
         });
 
+        function getNSBPasteText() {
+            const el = document.getElementById('nsbPasteInput');
+            return el ? el.value : '';
+        }
+
+        function updateNSBPasteCount() {
+            const el = document.getElementById('nsbPasteCount');
+            if (!el) return;
+            const lines = getNSBPasteText().split(/\r?\n/).filter(l => l.trim()).length;
+            el.textContent = lines ? `已粘贴 ${lines} 行` : '';
+        }
+
         function syncNSBInputMode(preferred) {
             const hasFile = !!(fileInput && fileInput.files && fileInput.files.length);
             const hasURL = !!(nsbSourceUrlInput && nsbSourceUrlInput.value.trim());
-            if (preferred === 'file' && hasFile && nsbSourceUrlInput) {
+            const hasPaste = !!getNSBPasteText().trim();
+            updateNSBPasteCount();
+            if (preferred === 'paste' && hasPaste && nsbSourceUrlInput) {
+                nsbSourceUrlInput.value = '';
+            } else if (preferred === 'file' && hasFile && nsbSourceUrlInput) {
                 nsbSourceUrlInput.value = '';
             } else if (preferred === 'url' && hasURL && fileInput) {
                 fileInput.value = '';
@@ -4986,11 +5013,18 @@
         function startNSBTask() {
             syncNSBInputMode();
             const sourceURL = nsbSourceUrlInput ? nsbSourceUrlInput.value.trim() : '';
-            const hasFile = !!uploadedFileContent.trim();
+            const pasteText = getNSBPasteText();
+            const localParts = [uploadedFileContent, pasteText].filter(t => t && t.trim());
+            const localContent = localParts.join(NSB_FILE_BOUNDARY);
+            const hasFile = localParts.length > 0;
             const hasURL = !!sourceURL;
             if (hasFile === hasURL) {
-                showNoticeCard('请选择本地文件或填写网络 URL（二选一）');
+                showNoticeCard(hasFile ? '本地文件/粘贴内容与网络 URL 只能二选一，请清空其中一项' : '请选择本地文件、粘贴 IP，或填写网络 URL');
                 return;
+            }
+            let localName = uploadedFileName;
+            if (pasteText.trim()) {
+                localName = uploadedFileContent.trim() ? `${uploadedFileName} + 粘贴内容` : '粘贴内容';
             }
 
             const maxThreads = parseInt(document.getElementById('nsbThreads').value) || 100;
@@ -5061,8 +5095,8 @@
             if (!wsSend({
                 type: 'start_nsb_task',
                 data: {
-                    fileName: uploadedFileName,
-                    fileContent: hasFile ? uploadedFileContent : '',
+                    fileName: localName,
+                    fileContent: hasFile ? localContent : '',
                     sourceURL: hasURL ? sourceURL : '',
                     outFile,
                     maxThreads,
