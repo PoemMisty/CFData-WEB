@@ -1,0 +1,55 @@
+name: Build iOS backend
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/ios.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: darwin/arm64 backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: CA certificates
+        run: |
+          curl -fsSL --retry 3 --connect-timeout 10 https://curl.se/ca/cacert.pem -o ca-certificates.crt
+          echo "CA certs: $(grep -c 'BEGIN CERTIFICATE' ca-certificates.crt)"
+
+      # The iOS port reuses the whole Go backend unchanged. Go cannot target iOS
+      # without cgo/Xcode, but a plain darwin/arm64 binary only needs its
+      # LC_BUILD_VERSION platform flipped from macOS(1) to iOS(2) plus the
+      # framework paths rewritten (iOS has no Versions/A directories).
+      - name: Build darwin/arm64
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: |
+          go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -X main.appVersion=${GITHUB_REF_NAME}" \
+            -o cfdata-darwin-arm64 .
+
+      - name: Patch Mach-O for iOS
+        run: |
+          python3 ios/tools/patch_macho.py cfdata-darwin-arm64 cfdata-ios-arm64
+          file cfdata-ios-arm64
+          sha256sum cfdata-ios-arm64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cfdata-ios-arm64
+          path: cfdata-ios-arm64
+          retention-days: 14
