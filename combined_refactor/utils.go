@@ -86,6 +86,9 @@ func defaultNSBPort(enableTLS bool) int {
 	return 80
 }
 
+// nsbFileBoundary 是前端合并多个上传文件时插入的分隔行。
+const nsbFileBoundary = "\n#==CFDATA-FILE-BOUNDARY==#\n"
+
 func parseNSBInputs(content string, fallbackPort int) []string {
 	var endpoints []nsbEndpoint
 	seen := make(map[string]bool)
@@ -101,14 +104,26 @@ func parseNSBInputs(content string, fallbackPort int) []string {
 		seen[key] = true
 		endpoints = append(endpoints, ep)
 	}
-	for _, ep := range parseNSBCSVDocument(content, fallbackPort) {
-		add(ep)
-	}
-
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		for _, ep := range parseNSBLine(scanner.Text(), fallbackPort) {
+	// 多文件上传时，前端用 nsbFileBoundary 分隔各文件内容；每段单独解析（各自识别 CSV 表头），再统一去重。
+	for _, segment := range strings.Split(content, nsbFileBoundary) {
+		for _, ep := range parseNSBCSVDocument(segment, fallbackPort) {
 			add(ep)
+		}
+
+		scanner := bufio.NewScanner(strings.NewReader(segment))
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			for _, ep := range parseNSBLine(scanner.Text(), fallbackPort) {
+				add(ep)
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			// 超长单行等异常导致 scanner 中止时，回退为逐行拆分解析，已解析的行靠去重保持，避免整段内容被静默丢弃。
+			for _, line := range strings.Split(segment, "\n") {
+				for _, ep := range parseNSBLine(strings.TrimSpace(line), fallbackPort) {
+					add(ep)
+				}
+			}
 		}
 	}
 
