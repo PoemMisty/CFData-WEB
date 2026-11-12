@@ -117,6 +117,14 @@ func parseNSBInputs(content string, fallbackPort int) []string {
 				add(ep)
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			// 超长单行等异常导致 scanner 中止时，回退为逐行拆分解析，已解析的行靠去重保持，避免整段内容被静默丢弃。
+			for _, line := range strings.Split(segment, "\n") {
+				for _, ep := range parseNSBLine(strings.TrimSpace(line), fallbackPort) {
+					add(ep)
+				}
+			}
+		}
 	}
 
 	items := make([]string, 0, len(endpoints))
