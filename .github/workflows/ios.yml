@@ -3,11 +3,18 @@ name: Build iOS backend
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
+      - beta
     paths:
       - "**.go"
-      - "go.mod"
-      - "go.sum"
+      - "combined_refactor/go.mod"
+      - "combined_refactor/go.sum"
       - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,11 +28,11 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: combined_refactor/go.mod
 
       - name: CA certificates
         run: |
-          curl -fsSL --retry 3 --connect-timeout 10 https://curl.se/ca/cacert.pem -o ca-certificates.crt
+          curl -fsSL --retry 3 --connect-timeout 10 https://curl.se/ca/cacert.pem -o combined_refactor/ca-certificates.crt
           echo "CA certs: $(grep -c 'BEGIN CERTIFICATE' ca-certificates.crt)"
 
       # The iOS port reuses the whole Go backend unchanged. Go cannot target iOS
@@ -38,9 +45,10 @@ jobs:
           GOARCH: arm64
           CGO_ENABLED: "0"
         run: |
+          cd combined_refactor
           go build -trimpath -buildvcs=false \
             -ldflags "-s -w -X main.appVersion=${GITHUB_REF_NAME}" \
-            -o cfdata-darwin-arm64 .
+            -o ../cfdata-darwin-arm64 .
 
       - name: Patch Mach-O for iOS
         run: |
@@ -48,7 +56,7 @@ jobs:
           file cfdata-ios-arm64
           sha256sum cfdata-ios-arm64
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cfdata-ios-arm64
           path: cfdata-ios-arm64

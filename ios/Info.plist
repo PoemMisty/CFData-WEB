@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>CFData</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.ganjibamao.cfdata</string>
+	<string>com.cfdata.web</string>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundlePrimaryIcon</key>
@@ -50,8 +50,6 @@
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
